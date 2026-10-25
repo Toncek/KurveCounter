@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - master
+      - Master
   pull_request:
     branches:
       - main
       - master
+      - Master
   workflow_dispatch:
 
 jobs:
