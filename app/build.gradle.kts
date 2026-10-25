@@ -34,13 +34,6 @@ android {
                 storePassword = keystorePassword
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
-            } else {
-                // Fallback to debug keystore
-                val debugConfig = getByName("debug")
-                storeFile = debugConfig.storeFile
-                storePassword = debugConfig.storePassword
-                this.keyAlias = debugConfig.keyAlias
-                this.keyPassword = debugConfig.keyPassword
             }
         }
     }
@@ -52,7 +45,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            val keystoreFile = System.getenv("KEYSTORE_FILE")
+            val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
+            val keyAlias = System.getenv("KEY_ALIAS")
+            val keyPassword = System.getenv("KEY_PASSWORD")
+
+            if (keystoreFile != null && keystorePassword != null && keyAlias != null && keyPassword != null && file(keystoreFile).exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
