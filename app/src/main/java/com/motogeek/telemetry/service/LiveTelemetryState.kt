@@ -2,6 +2,7 @@ package com.motogeek.telemetry.service
 
 data class LiveTelemetryState(
     val isRiding: Boolean = false,
+    val isPaused: Boolean = false,
     val leanAngleDeg: Double = 0.0,
     val peakLeanLeftDeg: Double = 0.0,
     val peakLeanRightDeg: Double = 0.0,
