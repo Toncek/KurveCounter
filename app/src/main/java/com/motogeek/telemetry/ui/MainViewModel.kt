@@ -108,6 +108,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         getApplication<Application>().startService(intent)
     }
+    fun deleteRideSession(rideId: Long) {
+        viewModelScope.launch {
+            repository.deleteRideSession(rideId)
+        }
+    }
+
+    fun updateRideSessionDetails(rideId: Long, name: String?, notes: String?) {
+        viewModelScope.launch {
+            repository.updateRideSessionDetails(rideId, name, notes)
+        }
+    }
+
+    fun getCornerEventsForRide(rideId: Long) = repository.getCornerEventsForRide(rideId)
+    fun getTelemetryTrackPointsForRide(rideId: Long) = repository.getTelemetryTrackPointsForRide(rideId)
 
     fun getMaintenanceTasks(motorcycleId: String) = repository.getMaintenanceTasksForMotorcycleFlow(motorcycleId)
     fun getServiceLogs(motorcycleId: String) = repository.getServiceLogsForMotorcycleFlow(motorcycleId)
