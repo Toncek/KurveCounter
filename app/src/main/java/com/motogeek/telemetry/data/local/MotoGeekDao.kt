@@ -42,6 +42,12 @@ interface MotoGeekDao {
     @Query("SELECT * FROM ride_sessions ORDER BY startTimeEpochMs DESC")
     fun getAllRideSessions(): Flow<List<RideSessionEntity>>
 
+    @Query("DELETE FROM ride_sessions WHERE rideId = :rideId")
+    suspend fun deleteRideSession(rideId: Long)
+
+    @Query("UPDATE ride_sessions SET name = :name, notes = :notes WHERE rideId = :rideId")
+    suspend fun updateRideSessionDetails(rideId: Long, name: String?, notes: String?)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCornerEvents(cornerEvents: List<CornerEventEntity>)
 

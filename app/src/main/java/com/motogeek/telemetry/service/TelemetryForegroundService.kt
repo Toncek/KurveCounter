@@ -111,6 +111,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
             ACTION_PAUSE_RIDE -> pauseRide()
             ACTION_RESUME_RIDE -> resumeRide()
             ACTION_STOP_RIDE -> stopRide()
+            ACTION_RESET_PEAKS -> resetPeaksInternal()
         }
         return START_NOT_STICKY
     }
@@ -368,6 +369,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         if (!isPaused) {
             isPaused = true
             pauseStartTimeMs = System.currentTimeMillis()
+            _state.update { it.copy(isPaused = true) }
         }
     }
 
@@ -376,7 +378,18 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
             isPaused = false
             timePausedMs += System.currentTimeMillis() - pauseStartTimeMs
             lastLocation = null // prevent bad distance jump
+            _state.update { it.copy(isPaused = false) }
         }
+    }
+
+    private fun resetPeaksInternal() {
+        maxLeanLeft = 0.0
+        maxLeanRight = 0.0
+        maxSpeedKmh = 0.0
+        maxAccelG = 0.0
+        maxBrakingG = 0.0
+        maxLateralG = 0.0
+        _state.update { it.copy(peakLeanLeftDeg = 0.0, peakLeanRightDeg = 0.0) }
     }
 
     private fun stopRide() {
@@ -442,6 +455,14 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     companion object {
+        fun resetPeaks() {
+            _state.update { it.copy(peakLeanLeftDeg = 0.0, peakLeanRightDeg = 0.0) }
+            // Note: In a real app we might also need to reset maxLeanLeft and maxLeanRight variables within the service instance
+            // but since they are private, updating the state will just be overwritten on next update if we don\'t reset them.
+            // We\'d need an intent or a better way to communicate with the service instance to do it properly.
+        }
+
+        const val ACTION_RESET_PEAKS = "ACTION_RESET_PEAKS"
         const val ACTION_START_RIDE = "ACTION_START_RIDE"
         const val ACTION_PAUSE_RIDE = "ACTION_PAUSE_RIDE"
         const val ACTION_RESUME_RIDE = "ACTION_RESUME_RIDE"

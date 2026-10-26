@@ -22,6 +22,11 @@ import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import com.motogeek.telemetry.service.RideSimulatorEngine
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository: MotoGeekRepository
@@ -96,9 +101,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    val liveTelemetryState: StateFlow<LiveTelemetryState> = TelemetryForegroundService.state
+    private val simulatorEngine = RideSimulatorEngine()
+    private var simulatorJob: Job? = null
+
+    // We combine the real state and the simulated state
+    private val _isDemoMode = MutableStateFlow(false)
+    val isDemoMode: StateFlow<Boolean> = _isDemoMode.asStateFlow()
+
+    val liveTelemetryState: StateFlow<LiveTelemetryState> = combine(
+        TelemetryForegroundService.state,
+        simulatorEngine.simState,
+        _isDemoMode
+    ) { realState, simState, demoMode ->
+        if (demoMode) simState else realState
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = LiveTelemetryState()
+    )
+
+    fun startDemoMode() {
+        _isDemoMode.value = true
+        simulatorJob?.cancel()
+        simulatorJob = viewModelScope.launch {
+            simulatorEngine.startSimulation()
+        }
+    }
+
+    fun stopDemoMode() {
+        simulatorJob?.cancel()
+        simulatorEngine.stopSimulation()
+        _isDemoMode.value = false
+    }
     val activeMotorcycle = repository.getActiveMotorcycleFlow()
     val allRides = repository.getAllRideSessions()
+
+    fun pauseRide() {
+        val intent = android.content.Intent(getApplication(), TelemetryForegroundService::class.java).apply {
+            action = TelemetryForegroundService.ACTION_PAUSE_RIDE
+        }
+        getApplication<Application>().startService(intent)
+    }
+
+    fun resumeRide() {
+        val intent = android.content.Intent(getApplication(), TelemetryForegroundService::class.java).apply {
+            action = TelemetryForegroundService.ACTION_RESUME_RIDE
+        }
+        getApplication<Application>().startService(intent)
+    }
+
+    fun resetPeaks() {
+        val intent = android.content.Intent(getApplication(), TelemetryForegroundService::class.java).apply {
+            action = TelemetryForegroundService.ACTION_RESET_PEAKS
+        }
+        getApplication<Application>().startService(intent)
+    }
+    fun deleteRideSession(rideId: Long) {
+        viewModelScope.launch {
+            repository.deleteRideSession(rideId)
+        }
+    }
+
+    fun updateRideSessionDetails(rideId: Long, name: String?, notes: String?) {
+        viewModelScope.launch {
+            repository.updateRideSessionDetails(rideId, name, notes)
+        }
+    }
+
+    fun getCornerEventsForRide(rideId: Long) = repository.getCornerEventsForRide(rideId)
+    fun getTelemetryTrackPointsForRide(rideId: Long) = repository.getTelemetryTrackPointsForRide(rideId)
 
     fun getMaintenanceTasks(motorcycleId: String) = repository.getMaintenanceTasksForMotorcycleFlow(motorcycleId)
     fun getServiceLogs(motorcycleId: String) = repository.getServiceLogsForMotorcycleFlow(motorcycleId)

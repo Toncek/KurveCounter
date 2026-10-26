@@ -34,6 +34,14 @@ class MotoGeekRepository(private val dao: MotoGeekDao) {
 
     suspend fun getRideSessionById(rideId: Long): RideSessionEntity? = dao.getRideSessionById(rideId)
 
+    suspend fun deleteRideSession(rideId: Long) {
+        dao.deleteRideSession(rideId)
+    }
+
+    suspend fun updateRideSessionDetails(rideId: Long, name: String?, notes: String?) {
+        dao.updateRideSessionDetails(rideId, name, notes)
+    }
+
     suspend fun insertRideSession(rideSession: RideSessionEntity): Long {
         return dao.insertRideSession(rideSession)
     }

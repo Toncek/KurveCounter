@@ -2,9 +2,11 @@ package com.motogeek.telemetry.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val DarkSurface = Color(0xFF1E1E1E)
-val PrimaryOrange = Color(0xFFFF5722)
-val AccentCyan = Color(0xFF00E5FF)
-val DangerRed = Color(0xFFFF1744)
-val WarningYellow = Color(0xFFFFEA00)
-val OkGreen = Color(0xFF00E676)
+val CarbonBlack = Color(0xFF0A0D12)
+val DarkGunmetal = Color(0xFF141923)
+val GlassmorphicBorder = Color(0xFF263042)
+
+val RacingRed = Color(0xFFFF2A54)
+val TelemetryCyan = Color(0xFF00E5FF)
+val ApexAmber = Color(0xFFFFB300)
+val TrackGreen = Color(0xFF00E676)
