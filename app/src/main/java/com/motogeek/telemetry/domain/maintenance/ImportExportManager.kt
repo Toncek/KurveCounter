@@ -5,12 +5,26 @@ import android.net.Uri
 import com.motogeek.telemetry.data.local.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.io.OutputStreamWriter
+import java.util.UUID
 import kotlinx.coroutines.flow.first
+
+data class ImportSummary(
+    val motorcyclesImported: Int = 0,
+    val tasksImported: Int = 0,
+    val logsImported: Int = 0
+)
 
 class ImportExportManager(private val context: Context, private val repository: MotoGeekRepository) {
 
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+        explicitNulls = false
+        prettyPrint = true
+    }
 
     val aiServiceManualPrompt: String = """
         You are an expert motorcycle mechanic. I am providing you with the service manual for a motorcycle.
@@ -45,72 +59,190 @@ class ImportExportManager(private val context: Context, private val repository: 
         }
     """.trimIndent()
 
-    suspend fun importGarageBackupFromString(jsonString: String): Result<Unit> {
+    private fun sanitizeJsonInput(raw: String): String {
+        val noFences = raw.replace("```json", "").replace("```", "")
+        val firstBrace = noFences.indexOf('{')
+        val lastBrace = noFences.lastIndexOf('}')
+        if (firstBrace != -1 && lastBrace != -1 && lastBrace >= firstBrace) {
+            return noFences.substring(firstBrace, lastBrace + 1).trim()
+        }
+        return noFences.trim()
+    }
+
+    suspend fun importFromJsonString(rawJson: String, targetMotorcycleId: String?): Result<ImportSummary> {
         return try {
-            val cleanedJson = jsonString.replace("```json", "").replace("```", "").trim()
-            val payload = json.decodeFromString<GarageBackupPayload>(cleanedJson)
+            val cleanedJson = sanitizeJsonInput(rawJson)
+            val jsonElement = Json.parseToJsonElement(cleanedJson).jsonObject
 
-            payload.motorcycles.forEach { backup ->
-                val bikeEntity = MotorcycleEntity(
-                    id = backup.motorcycle.id,
-                    make = backup.motorcycle.make,
-                    model = backup.motorcycle.model,
-                    year = backup.motorcycle.year,
-                    engineDisplacementCc = backup.motorcycle.engineDisplacementCc,
-                    baseOdometerKm = backup.motorcycle.baseOdometerKm,
-                    accumulatedTrackedKm = backup.motorcycle.accumulatedTrackedKm,
-                    manualAdjustmentOffsetKm = backup.motorcycle.manualAdjustmentOffsetKm,
-                    technicalSpecsJson = backup.technicalSpecs?.let { json.encodeToString(it) } ?: "{}",
-                    isActive = backup.motorcycle.isActive
-                )
+            var bikesImported = 0
+            var tasksImported = 0
+            var logsImported = 0
+
+            if (jsonElement.containsKey("motorcycles")) {
+                // Format A (Full Garage Backup)
+                val payload = json.decodeFromString<GarageBackupPayload>(cleanedJson)
+                payload.motorcycles.forEach { backup ->
+                    val bikeEntity = MotorcycleEntity(
+                        id = backup.motorcycle.id,
+                        make = backup.motorcycle.make,
+                        model = backup.motorcycle.model,
+                        year = backup.motorcycle.year,
+                        engineDisplacementCc = backup.motorcycle.engineDisplacementCc,
+                        baseOdometerKm = backup.motorcycle.baseOdometerKm,
+                        accumulatedTrackedKm = backup.motorcycle.accumulatedTrackedKm,
+                        manualAdjustmentOffsetKm = backup.motorcycle.manualAdjustmentOffsetKm,
+                        technicalSpecsJson = backup.technicalSpecs?.let { json.encodeToString(it) } ?: "{}",
+                        isActive = backup.motorcycle.isActive
+                    )
+                    repository.insertMotorcycle(bikeEntity)
+                    bikesImported++
+
+                    val taskEntities = backup.maintenanceSchedule.map { task ->
+                        MaintenanceTaskEntity(
+                            taskId = task.taskId,
+                            motorcycleId = bikeEntity.id,
+                            category = task.category,
+                            taskName = task.taskName,
+                            actionType = task.actionType,
+                            firstBreakInAtKm = task.firstBreakInAtKm,
+                            intervalKm = task.intervalKm,
+                            intervalMonths = task.intervalMonths,
+                            warningThresholdKm = task.warningThresholdKm,
+                            warningThresholdDays = task.warningThresholdDays,
+                            oemPartNumbersJson = json.encodeToString(task.oemPartNumbers),
+                            notes = task.notes
+                        )
+                    }
+                    repository.insertMaintenanceTasks(taskEntities)
+                    tasksImported += taskEntities.size
+
+                    val logEntities = backup.serviceLogs.map { log ->
+                        ServiceLogEntity(
+                            logId = log.logId,
+                            motorcycleId = bikeEntity.id,
+                            taskId = log.taskId,
+                            performedAtIsoDate = log.performedAtIsoDate,
+                            odometerAtServiceKm = log.odometerAtServiceKm,
+                            costEur = log.costEur,
+                            performedBy = log.performedBy,
+                            notes = log.notes
+                        )
+                    }
+                    repository.insertServiceLogs(logEntities)
+                    logsImported += logEntities.size
+                }
+            } else {
+                // Formats B & C
+                val targetBike = if (targetMotorcycleId != null) {
+                    repository.getAllMotorcycles().first().find { it.id == targetMotorcycleId }
+                } else {
+                    val activeBike = repository.getActiveMotorcycle()
+                    activeBike
+                }
+
+                val hasMotorcycleInfo = jsonElement.containsKey("motorcycleInfo")
+                val technicalSpecsJson = jsonElement["technicalSpecs"]?.let { json.encodeToString(it) } ?: "{}"
+
+                val bikeEntity = if (targetBike != null) {
+                    var updatedBike = targetBike.copy(technicalSpecsJson = technicalSpecsJson)
+                    if (hasMotorcycleInfo) {
+                        val motoInfo = json.decodeFromString<MotorcycleInfoV2Dto>(jsonElement["motorcycleInfo"].toString())
+                        updatedBike = updatedBike.copy(
+                            make = motoInfo.make,
+                            model = motoInfo.model,
+                            year = motoInfo.year,
+                            engineDisplacementCc = motoInfo.engineDisplacementCc
+                        )
+                    } else {
+                         val specs = json.decodeFromString<TechnicalSpecsDto>(technicalSpecsJson)
+                         if (specs.motorcycleMake != null || specs.motorcycleModel != null) {
+                             updatedBike = updatedBike.copy(
+                                 make = specs.motorcycleMake ?: updatedBike.make,
+                                 model = specs.motorcycleModel ?: updatedBike.model
+                             )
+                         }
+                    }
+                    updatedBike
+                } else {
+                    // Create new bike
+                    var make = "Unknown"
+                    var model = "Unknown"
+                    var year = 2024
+                    var cc = 0
+                    if (hasMotorcycleInfo) {
+                        val motoInfo = json.decodeFromString<MotorcycleInfoV2Dto>(jsonElement["motorcycleInfo"].toString())
+                        make = motoInfo.make
+                        model = motoInfo.model
+                        year = motoInfo.year
+                        cc = motoInfo.engineDisplacementCc
+                    } else {
+                        val specs = json.decodeFromString<TechnicalSpecsDto>(technicalSpecsJson)
+                        make = specs.motorcycleMake ?: "Unknown"
+                        model = specs.motorcycleModel ?: "Unknown"
+                    }
+
+                    MotorcycleEntity(
+                        id = UUID.randomUUID().toString(),
+                        make = make,
+                        model = model,
+                        year = year,
+                        engineDisplacementCc = cc,
+                        baseOdometerKm = 0.0,
+                        accumulatedTrackedKm = 0.0,
+                        manualAdjustmentOffsetKm = 0.0,
+                        technicalSpecsJson = technicalSpecsJson,
+                        isActive = true
+                    )
+                }
+
                 repository.insertMotorcycle(bikeEntity)
+                if (targetBike == null) bikesImported++
 
-                val taskEntities = backup.maintenanceSchedule.map { task ->
-                    MaintenanceTaskEntity(
-                        taskId = task.taskId,
-                        motorcycleId = bikeEntity.id,
-                        category = task.category,
-                        taskName = task.taskName,
-                        actionType = task.actionType,
-                        firstBreakInAtKm = task.firstBreakInAtKm,
-                        intervalKm = task.intervalKm,
-                        intervalMonths = task.intervalMonths,
-                        warningThresholdKm = task.warningThresholdKm,
-                        warningThresholdDays = task.warningThresholdDays,
-                        oemPartNumbersJson = json.encodeToString(task.oemPartNumbers),
-                        notes = task.notes
-                    )
+                val maintenanceScheduleStr = jsonElement["maintenanceSchedule"]?.toString()
+                if (maintenanceScheduleStr != null) {
+                    val schedule = json.decodeFromString<List<MaintenanceTaskDto>>(maintenanceScheduleStr)
+                    val taskEntities = schedule.map { task ->
+                        MaintenanceTaskEntity(
+                            taskId = task.taskId,
+                            motorcycleId = bikeEntity.id,
+                            category = task.category,
+                            taskName = task.taskName,
+                            actionType = task.actionType,
+                            firstBreakInAtKm = task.firstBreakInAtKm,
+                            intervalKm = task.intervalKm,
+                            intervalMonths = task.intervalMonths,
+                            warningThresholdKm = task.warningThresholdKm,
+                            warningThresholdDays = task.warningThresholdDays,
+                            oemPartNumbersJson = json.encodeToString(task.oemPartNumbers),
+                            notes = task.notes
+                        )
+                    }
+                    repository.insertMaintenanceTasks(taskEntities)
+                    tasksImported += taskEntities.size
                 }
-                repository.insertMaintenanceTasks(taskEntities)
-
-                val logEntities = backup.serviceLogs.map { log ->
-                    ServiceLogEntity(
-                        logId = log.logId,
-                        motorcycleId = bikeEntity.id,
-                        taskId = log.taskId,
-                        performedAtIsoDate = log.performedAtIsoDate,
-                        odometerAtServiceKm = log.odometerAtServiceKm,
-                        costEur = log.costEur,
-                        performedBy = log.performedBy,
-                        notes = log.notes
-                    )
-                }
-                repository.insertServiceLogs(logEntities)
             }
-            Result.success(Unit)
+
+            Result.success(ImportSummary(bikesImported, tasksImported, logsImported))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun importGarageBackup(uri: Uri): Result<Unit> {
+    suspend fun importGarageBackup(uri: Uri, targetMotorcycleId: String? = null): Result<ImportSummary> {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: throw Exception("Cannot open file")
-            val jsonString = inputStream.bufferedReader().use { it.readText() }
-            importGarageBackupFromString(jsonString)
+            val jsonString = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            } ?: throw Exception("Cannot read file")
+            importFromJsonString(jsonString, targetMotorcycleId)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun importGarageBackupFromString(jsonString: String): Result<Unit> {
+        // Legacy compat
+        val res = importFromJsonString(jsonString, null)
+        return if (res.isSuccess) Result.success(Unit) else Result.failure(res.exceptionOrNull()!!)
     }
 
     suspend fun exportGarageBackup(uri: Uri): Result<Unit> {

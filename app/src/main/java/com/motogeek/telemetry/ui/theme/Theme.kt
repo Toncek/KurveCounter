@@ -8,9 +8,9 @@ import androidx.compose.ui.graphics.Color
 private val DarkColorScheme = darkColorScheme(
     primary = RacingRed,
     secondary = TelemetryCyan,
-    background = CarbonBlack,
-    surface = DarkGunmetal,
-    error = RacingRed,
+    background = DarkCharcoalBg,
+    surface = DrawerSurfaceBg,
+    error = CrimsonHeaderRed,
     tertiary = ApexAmber,
     onPrimary = Color.White,
     onSecondary = Color.Black,

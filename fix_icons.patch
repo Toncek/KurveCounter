@@ -1,0 +1,22 @@
+--- app/src/main/java/com/motogeek/telemetry/ui/HomeScreen.kt
++++ app/src/main/java/com/motogeek/telemetry/ui/HomeScreen.kt
+@@ -86,7 +86,7 @@
+                 ShortcutCard("Add Parts", android.R.drawable.ic_menu_manage, Modifier.weight(1f)) { navController.navigate("parts") }
+             }
+             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+-                ShortcutCard("Add Maintenance", android.R.drawable.ic_menu_build, Modifier.weight(1f)) { navController.navigate("maintenance") }
++                ShortcutCard("Add Maintenance", android.R.drawable.ic_menu_manage, Modifier.weight(1f)) { navController.navigate("maintenance") }
+                 ShortcutCard("Track Rides", android.R.drawable.ic_menu_mylocation, Modifier.weight(1f)) { navController.navigate("cockpit") }
+             }
+             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+--- app/src/main/java/com/motogeek/telemetry/ui/components/MotoGeekDrawerSheet.kt
++++ app/src/main/java/com/motogeek/telemetry/ui/components/MotoGeekDrawerSheet.kt
+@@ -64,7 +64,7 @@
+             DrawerItem("Bike Information", "bike_info", android.R.drawable.ic_menu_info_details, currentRoute, onNavigate)
+             DrawerItem("Fuel", "fuel", android.R.drawable.ic_menu_view, currentRoute, onNavigate)
+             DrawerItem("Parts", "parts", android.R.drawable.ic_menu_manage, currentRoute, onNavigate)
+-            DrawerItem("Maintenance Service", "maintenance", android.R.drawable.ic_menu_build, currentRoute, onNavigate)
++            DrawerItem("Maintenance Service", "maintenance", android.R.drawable.ic_menu_manage, currentRoute, onNavigate)
+             DrawerItem("Rides", "history", android.R.drawable.ic_menu_mapmode, currentRoute, onNavigate)
+
+             Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color.Gray.copy(alpha = 0.3f))

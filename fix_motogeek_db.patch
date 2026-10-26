@@ -1,0 +1,14 @@
+--- app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekDatabase.kt
++++ app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekDatabase.kt
+@@ -10,7 +10,10 @@
+         CornerEventEntity::class,
+         TelemetryTrackPointEntity::class,
+         MaintenanceTaskEntity::class,
+-        ServiceLogEntity::class
++        ServiceLogEntity::class,
++        FuelLogEntity::class,
++        PartLogEntity::class,
++        ReminderEntity::class
+     ],
+     version = 1,
+     exportSchema = false

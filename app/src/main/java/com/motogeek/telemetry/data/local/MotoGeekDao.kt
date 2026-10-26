@@ -89,4 +89,22 @@ interface MotoGeekDao {
 
     @Query("SELECT * FROM service_logs WHERE motorcycleId = :motorcycleId ORDER BY performedAtIsoDate DESC")
     fun getServiceLogsForMotorcycleFlow(motorcycleId: String): Flow<List<ServiceLogEntity>>
+
+    // --- Fuel Logs ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFuelLog(fuelLog: FuelLogEntity)
+    @Query("SELECT * FROM fuel_logs WHERE motorcycleId = :motorcycleId ORDER BY dateIso DESC")
+    fun getFuelLogsForMotorcycle(motorcycleId: String): Flow<List<FuelLogEntity>>
+
+    // --- Part Logs ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPartLog(partLog: PartLogEntity)
+    @Query("SELECT * FROM part_logs WHERE motorcycleId = :motorcycleId ORDER BY dateIso DESC")
+    fun getPartLogsForMotorcycle(motorcycleId: String): Flow<List<PartLogEntity>>
+
+    // --- Reminders ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReminder(reminder: ReminderEntity)
+    @Query("SELECT * FROM reminders WHERE motorcycleId = :motorcycleId")
+    fun getRemindersForMotorcycle(motorcycleId: String): Flow<List<ReminderEntity>>
 }

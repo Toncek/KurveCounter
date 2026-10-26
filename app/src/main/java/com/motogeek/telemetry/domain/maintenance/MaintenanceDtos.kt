@@ -9,6 +9,14 @@ data class GarageBackupPayload(
 )
 
 @Serializable
+data class MotorcycleInfoV2Dto(
+    val make: String = "",
+    val model: String = "",
+    val year: Int = 0,
+    val engineDisplacementCc: Int = 0
+)
+
+@Serializable
 data class MotorcycleBackupDto(
     val motorcycle: MotorcycleDto,
     val technicalSpecs: TechnicalSpecsDto?,
@@ -31,13 +39,17 @@ data class MotorcycleDto(
 
 @Serializable
 data class TechnicalSpecsDto(
-    val oilCapacityLiters: Double?,
-    val frontTirePressurePsi: Double?,
-    val rearTirePressurePsi: Double?,
-    val chainSlackMm: String?,
-    val rearAxleNutTorqueNm: Double?,
-    val oilDrainPlugTorqueNm: Double?,
-    val frontCaliperBoltsTorqueNm: Double?
+    val oilCapacityLiters: Double? = null,
+    val frontTirePressurePsi: Double? = null,
+    val rearTirePressurePsi: Double? = null,
+    val chainSlackMm: String? = null,
+    val rearAxleNutTorqueNm: Double? = null,
+    val oilDrainPlugTorqueNm: Double? = null,
+    val frontCaliperBoltsTorqueNm: Double? = null,
+    val motorcycleMake: String? = null,
+    val motorcycleModel: String? = null,
+    val boltTorquesNm: Map<String, Double>? = null,
+    val torquesNm: Map<String, Double>? = null
 )
 
 @Serializable
