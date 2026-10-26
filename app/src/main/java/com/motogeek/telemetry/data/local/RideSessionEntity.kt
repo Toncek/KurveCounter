@@ -40,5 +40,7 @@ data class RideSessionEntity(
     val trailBrakingScorePct: Double,
     val avgCornerScore: Double,
     val elevationGainMeters: Double,
-    val ridingStyleBadge: String
+    val ridingStyleBadge: String,
+    val name: String? = null,
+    val notes: String? = null
 )
