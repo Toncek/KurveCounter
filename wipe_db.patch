@@ -1,0 +1,14 @@
+--- app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekDatabase.kt
++++ app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekDatabase.kt
+@@ -29,7 +29,10 @@
+                     context.applicationContext,
+                     MotoGeekDatabase::class.java,
+                     "motogeek_database"
+-                ).fallbackToDestructiveMigration().build()
++                )
++                .fallbackToDestructiveMigration()
++                .allowMainThreadQueries()
++                .build()
+                 INSTANCE = instance
+                 instance
+             }

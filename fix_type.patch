@@ -1,0 +1,11 @@
+--- app/src/main/java/com/motogeek/telemetry/ui/BikeInfoScreen.kt
++++ app/src/main/java/com/motogeek/telemetry/ui/BikeInfoScreen.kt
+@@ -48,7 +48,7 @@
+                                         make = brand,
+                                         model = model,
+                                         startDateIso = startDateIso,
+-                                        baseOdometerKm = startOdo.toDoubleOrNull() ?: 0.0,
++                                        baseOdometerKm = (startOdo.toDoubleOrNull() ?: 0.0),
+                                         buyingPrice = buyingPrice.toDoubleOrNull() ?: 0.0
+                                     )
+                                 )

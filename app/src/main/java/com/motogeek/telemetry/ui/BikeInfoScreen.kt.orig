@@ -14,6 +14,7 @@ import androidx.navigation.NavController
 import com.motogeek.telemetry.ui.components.ActiveBikeDropdownCard
 import com.motogeek.telemetry.ui.components.SegmentedDigitalText
 import com.motogeek.telemetry.ui.theme.CrimsonHeaderRed
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,12 +23,36 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
     val allBikes by viewModel.repository.getAllMotorcycles().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
+    var name by remember(activeBike) { mutableStateOf(activeBike?.name ?: "") }
+    var type by remember(activeBike) { mutableStateOf(activeBike?.type ?: "") }
+    var brand by remember(activeBike) { mutableStateOf(activeBike?.make ?: "") }
+    var model by remember(activeBike) { mutableStateOf(activeBike?.model ?: "") }
+    var startDateIso by remember(activeBike) { mutableStateOf(activeBike?.startDateIso ?: "") }
+    var startOdo by remember(activeBike) { mutableStateOf(activeBike?.baseOdometerKm?.toString() ?: "") }
+    var buyingPrice by remember(activeBike) { mutableStateOf(activeBike?.buyingPrice?.toString() ?: "") }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Bike Information", color = Color.White) },
                 actions = {
-                    TextButton(onClick = { /* Save */ }) {
+                    TextButton(onClick = {
+                        activeBike?.let { bike ->
+                            scope.launch {
+                                viewModel.repository.updateMotorcycle(
+                                    bike.copy(
+                                        name = name,
+                                        type = type,
+                                        make = brand,
+                                        model = model,
+                                        startDateIso = startDateIso,
+                                        baseOdometerKm = startOdo.toDoubleOrNull() ?: 0.0,
+                                        buyingPrice = buyingPrice.toDoubleOrNull() ?: 0.0
+                                    )
+                                )
+                            }
+                        }
+                    }) {
                         Text("SAVE", color = Color.White)
                     }
                     IconButton(onClick = { /* Menu */ }) {
@@ -50,7 +75,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                 activeBike = activeBike,
                 allBikes = allBikes,
                 onBikeSelected = { id ->
-                    kotlinx.coroutines.GlobalScope.launch { viewModel.repository.selectActiveMotorcycle(id) }
+                    scope.launch { viewModel.repository.selectActiveMotorcycle(id) }
                 },
                 onAddNewBike = { navController.navigate("garage") },
                 showOdometer = false
@@ -58,44 +83,44 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
 
             // Form Fields
             OutlinedTextField(
-                value = activeBike?.name ?: "",
-                onValueChange = { },
+                value = name,
+                onValueChange = { name = it },
                 label = { Text("Name") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = activeBike?.type ?: "",
-                onValueChange = { },
+                value = type,
+                onValueChange = { type = it },
                 label = { Text("Type") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = activeBike?.make ?: "",
-                onValueChange = { },
+                value = brand,
+                onValueChange = { brand = it },
                 label = { Text("Brand") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = activeBike?.model ?: "",
-                onValueChange = { },
+                value = model,
+                onValueChange = { model = it },
                 label = { Text("Model") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = activeBike?.startDateIso ?: "",
-                onValueChange = { },
+                value = startDateIso,
+                onValueChange = { startDateIso = it },
                 label = { Text("Start Date") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = activeBike?.baseOdometerKm?.toString() ?: "",
-                onValueChange = { },
+                value = startOdo,
+                onValueChange = { startOdo = it },
                 label = { Text("Starting Odometer Reading") },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
-                value = activeBike?.buyingPrice?.toString() ?: "",
-                onValueChange = { },
+                value = buyingPrice,
+                onValueChange = { buyingPrice = it },
                 label = { Text("Buying Price") },
                 modifier = Modifier.fillMaxWidth()
             )

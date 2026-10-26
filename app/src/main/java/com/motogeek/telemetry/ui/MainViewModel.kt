@@ -44,13 +44,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         importExportManager = ImportExportManager(application, repository)
 
         viewModelScope.launch {
-            val bikes = repository.getAllMotorcycles().first()
-            if (bikes.isEmpty()) {
-                _showOnboarding.value = true
-                // Seed the Universal Template by default
-                applyTemplate(MotorcycleTemplateCatalog.universal)
-            } else {
-                _showOnboarding.value = false
+            try {
+                val bikes = repository.getAllMotorcycles().first()
+                if (bikes.isEmpty()) {
+                    _showOnboarding.value = true
+                    // Seed the Universal Template by default
+                    applyTemplate(MotorcycleTemplateCatalog.universal)
+                } else {
+                    _showOnboarding.value = false
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
