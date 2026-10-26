@@ -15,6 +15,9 @@ interface MotoGeekDao {
     @Update
     suspend fun updateMotorcycle(motorcycle: MotorcycleEntity)
 
+    @Query("DELETE FROM motorcycles WHERE id = :id")
+    suspend fun deleteMotorcycle(id: String)
+
     @Query("SELECT * FROM motorcycles")
     fun getAllMotorcycles(): Flow<List<MotorcycleEntity>>
 
@@ -58,7 +61,13 @@ interface MotoGeekDao {
     fun getTelemetryTrackPointsForRide(rideId: Long): Flow<List<TelemetryTrackPointEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMaintenanceTask(task: MaintenanceTaskEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMaintenanceTasks(tasks: List<MaintenanceTaskEntity>)
+
+    @Query("DELETE FROM maintenance_tasks WHERE taskId = :taskId AND motorcycleId = :motorcycleId")
+    suspend fun deleteMaintenanceTask(taskId: String, motorcycleId: String)
 
     @Query("SELECT * FROM maintenance_tasks WHERE motorcycleId = :motorcycleId")
     suspend fun getMaintenanceTasksForMotorcycle(motorcycleId: String): List<MaintenanceTaskEntity>
@@ -71,6 +80,9 @@ interface MotoGeekDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertServiceLogs(serviceLogs: List<ServiceLogEntity>)
+
+    @Query("DELETE FROM service_logs WHERE logId = :logId")
+    suspend fun deleteServiceLog(logId: String)
 
     @Query("SELECT * FROM service_logs WHERE motorcycleId = :motorcycleId")
     suspend fun getServiceLogsForMotorcycle(motorcycleId: String): List<ServiceLogEntity>

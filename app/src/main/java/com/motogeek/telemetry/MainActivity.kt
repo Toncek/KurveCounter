@@ -44,6 +44,20 @@ class MainActivity : ComponentActivity() {
         setContent {
             MotoGeekTelemetryTheme {
                 val navController = rememberNavController()
+                val showOnboarding by viewModel.showOnboarding.collectAsState()
+
+                if (showOnboarding) {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.dismissOnboarding() },
+                        title = { Text("Welcome to MotoGeek Telemetry") },
+                        text = { Text("We have seeded your garage with a Universal Motorcycle Template.\n\nGo to the Garage tab to Edit your bike details, apply one of the 6 Built-In Templates, or paste a custom JSON schedule.") },
+                        confirmButton = {
+                            Button(onClick = { viewModel.dismissOnboarding() }) {
+                                Text("Let's Ride!")
+                            }
+                        }
+                    )
+                }
 
                 val items = listOf(
                     Triple("cockpit", "Cockpit", Icons.Filled.Home),

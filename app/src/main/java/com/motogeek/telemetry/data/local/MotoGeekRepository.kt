@@ -17,6 +17,10 @@ class MotoGeekRepository(private val dao: MotoGeekDao) {
         dao.updateMotorcycle(motorcycle)
     }
 
+    suspend fun deleteMotorcycle(motorcycleId: String) {
+        dao.deleteMotorcycle(motorcycleId)
+    }
+
     suspend fun updateOdometerManualOffset(motorcycleId: String, userTargetOdometerKm: Double, baseOdometerKm: Double, accumulatedTrackedKm: Double) {
         val offset = userTargetOdometerKm - (baseOdometerKm + accumulatedTrackedKm)
         dao.updateMotorcycleManualOffset(motorcycleId, offset)
@@ -54,8 +58,16 @@ class MotoGeekRepository(private val dao: MotoGeekDao) {
 
     fun getTelemetryTrackPointsForRide(rideId: Long): Flow<List<TelemetryTrackPointEntity>> = dao.getTelemetryTrackPointsForRide(rideId)
 
+    suspend fun insertMaintenanceTask(task: MaintenanceTaskEntity) {
+        dao.insertMaintenanceTask(task)
+    }
+
     suspend fun insertMaintenanceTasks(tasks: List<MaintenanceTaskEntity>) {
         dao.insertMaintenanceTasks(tasks)
+    }
+
+    suspend fun deleteMaintenanceTask(taskId: String, motorcycleId: String) {
+        dao.deleteMaintenanceTask(taskId, motorcycleId)
     }
 
     suspend fun getMaintenanceTasksForMotorcycle(motorcycleId: String): List<MaintenanceTaskEntity> {
@@ -72,6 +84,10 @@ class MotoGeekRepository(private val dao: MotoGeekDao) {
 
     suspend fun insertServiceLogs(serviceLogs: List<ServiceLogEntity>) {
         dao.insertServiceLogs(serviceLogs)
+    }
+
+    suspend fun deleteServiceLog(logId: String) {
+        dao.deleteServiceLog(logId)
     }
 
     suspend fun getServiceLogsForMotorcycle(motorcycleId: String): List<ServiceLogEntity> {
