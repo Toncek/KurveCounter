@@ -11,13 +11,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -25,6 +23,9 @@ import androidx.navigation.compose.*
 import com.motogeek.telemetry.service.TelemetryForegroundService
 import com.motogeek.telemetry.ui.*
 import com.motogeek.telemetry.ui.theme.MotoGeekTelemetryTheme
+import com.motogeek.telemetry.ui.theme.CrimsonHeaderRed
+import com.motogeek.telemetry.ui.components.MotoGeekDrawerSheet
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -45,6 +46,11 @@ class MainActivity : ComponentActivity() {
             MotoGeekTelemetryTheme {
                 val navController = rememberNavController()
                 val showOnboarding by viewModel.showOnboarding.collectAsState()
+                val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)
+                val allBikes by viewModel.repository.getAllMotorcycles().collectAsState(initial = emptyList())
+
+                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                val scope = rememberCoroutineScope()
 
                 if (showOnboarding) {
                     AlertDialog(
@@ -59,48 +65,71 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                val items = listOf(
-                    Triple("cockpit", "Cockpit", Icons.Filled.Home),
-                    Triple("history", "History", Icons.Filled.List),
-                    Triple("maintenance", "Maintenance", Icons.Filled.Build),
-                    Triple("garage", "Garage", Icons.Filled.Settings)
-                )
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route
 
-                Scaffold(
-                    bottomBar = {
-                        NavigationBar {
-                            val navBackStackEntry by navController.currentBackStackEntryAsState()
-                            val currentDestination = navBackStackEntry?.destination
-                            items.forEach { (route, label, icon) ->
-                                NavigationBarItem(
-                                    icon = { Icon(icon, contentDescription = label) },
-                                    label = { Text(label) },
-                                    selected = currentDestination?.hierarchy?.any { it.route == route } == true,
-                                    onClick = {
-                                        navController.navigate(route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        MotoGeekDrawerSheet(
+                            activeBike = activeBike,
+                            allBikes = allBikes,
+                            onBikeSelected = { bikeId ->
+                                scope.launch { viewModel.repository.selectActiveMotorcycle(bikeId) }
+                            },
+                            onAddNewBike = {
+                                navController.navigate("garage")
+                            },
+                            currentRoute = currentRoute,
+                            onNavigate = { route ->
+                                scope.launch { drawerState.close() }
+                                navController.navigate(route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
                                     }
-                                )
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
-                        }
+                        )
                     }
-                ) { innerPadding ->
-                    NavHost(navController, startDestination = "cockpit", Modifier.padding(innerPadding)) {
-                        composable("cockpit") {
-                            CockpitScreen(
-                                viewModel = viewModel,
-                                onStartRide = { startRideService() },
-                                onStopRide = { stopRideService() }
+                ) {
+                    Scaffold(
+                        topBar = {
+                            @OptIn(ExperimentalMaterial3Api::class)
+                            TopAppBar(
+                                title = { Text("MotoGeek", color = Color.White) },
+                                navigationIcon = {
+                                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                        Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
+                                    }
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = CrimsonHeaderRed
+                                )
                             )
                         }
-                        composable("history") { TelemetryHistoryScreen(viewModel) }
-                        composable("maintenance") { MaintenanceScreen(viewModel) }
-                        composable("garage") { GarageSettingsScreen(viewModel) }
+                    ) { innerPadding ->
+                        NavHost(navController, startDestination = "home", Modifier.padding(innerPadding)) {
+                            composable("home") { HomeScreen(viewModel, navController) }
+                            composable("cockpit") {
+                                CockpitScreen(
+                                    viewModel = viewModel,
+                                    onStartRide = { startRideService() },
+                                    onStopRide = { stopRideService() }
+                                )
+                            }
+                            composable("history") { TelemetryHistoryScreen(viewModel) }
+                            composable("maintenance") { MaintenanceScreen(viewModel) }
+                            composable("garage") { GarageSettingsScreen(viewModel) }
+                            composable("dashboard") { Text("Dashboard Placeholder") }
+                            composable("bike_info") { BikeInfoScreen(viewModel, navController) }
+                            composable("fuel") { FuelScreen(viewModel, navController) }
+                            composable("parts") { PartsScreen(viewModel, navController) }
+                            composable("reminders") { RemindersScreen(viewModel, navController) }
+                            composable("logs") { LogsScreen(viewModel, navController) }
+                            composable("offline_backup") { OfflineBackupScreen(viewModel, navController) }
+                        }
                     }
                 }
             }

@@ -1,0 +1,11 @@
+--- app/src/main/java/com/motogeek/telemetry/ui/BikeInfoScreen.kt
++++ app/src/main/java/com/motogeek/telemetry/ui/BikeInfoScreen.kt
+@@ -51,7 +51,7 @@
+                 activeBike = activeBike,
+                 allBikes = allBikes,
+                 onBikeSelected = { id ->
+-                    kotlinx.coroutines.GlobalScope.launch { viewModel.repository.selectActiveMotorcycle(id) }
++                    scope.launch { viewModel.repository.selectActiveMotorcycle(id) }
+                 },
+                 onAddNewBike = { navController.navigate("garage") },
+                 showOdometer = false

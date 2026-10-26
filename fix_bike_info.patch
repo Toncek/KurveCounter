@@ -1,0 +1,8 @@
+--- app/src/main/java/com/motogeek/telemetry/ui/BikeInfoScreen.kt
++++ app/src/main/java/com/motogeek/telemetry/ui/BikeInfoScreen.kt
+@@ -16,6 +16,7 @@
+ import com.motogeek.telemetry.ui.theme.CrimsonHeaderRed
++import kotlinx.coroutines.launch
+
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable

@@ -1,6 +1,7 @@
 package com.motogeek.telemetry.data.local
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 class MotoGeekRepository(private val dao: MotoGeekDao) {
     fun getAllMotorcycles(): Flow<List<MotorcycleEntity>> = dao.getAllMotorcycles()
@@ -8,6 +9,13 @@ class MotoGeekRepository(private val dao: MotoGeekDao) {
     suspend fun getActiveMotorcycle(): MotorcycleEntity? = dao.getActiveMotorcycle()
 
     fun getActiveMotorcycleFlow(): Flow<MotorcycleEntity?> = dao.getActiveMotorcycleFlow()
+
+    suspend fun selectActiveMotorcycle(motorcycleId: String) {
+        val allBikes = dao.getAllMotorcycles().first()
+        allBikes.forEach { bike ->
+            dao.updateMotorcycle(bike.copy(isActive = bike.id == motorcycleId))
+        }
+    }
 
     suspend fun insertMotorcycle(motorcycle: MotorcycleEntity) {
         dao.insertMotorcycle(motorcycle)
@@ -97,4 +105,16 @@ class MotoGeekRepository(private val dao: MotoGeekDao) {
     fun getServiceLogsForMotorcycleFlow(motorcycleId: String): Flow<List<ServiceLogEntity>> {
         return dao.getServiceLogsForMotorcycleFlow(motorcycleId)
     }
+
+    suspend fun insertFuelLog(fuelLog: FuelLogEntity) { dao.insertFuelLog(fuelLog) }
+    fun getFuelLogsForMotorcycle(motorcycleId: String): Flow<List<FuelLogEntity>> =
+        dao.getFuelLogsForMotorcycle(motorcycleId)
+
+    suspend fun insertPartLog(partLog: PartLogEntity) { dao.insertPartLog(partLog) }
+    fun getPartLogsForMotorcycle(motorcycleId: String): Flow<List<PartLogEntity>> =
+        dao.getPartLogsForMotorcycle(motorcycleId)
+
+    suspend fun insertReminder(reminder: ReminderEntity) { dao.insertReminder(reminder) }
+    fun getRemindersForMotorcycle(motorcycleId: String): Flow<List<ReminderEntity>> =
+        dao.getRemindersForMotorcycle(motorcycleId)
 }

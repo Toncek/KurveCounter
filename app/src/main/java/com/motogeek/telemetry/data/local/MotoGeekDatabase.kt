@@ -12,7 +12,10 @@ import androidx.room.RoomDatabase
         CornerEventEntity::class,
         TelemetryTrackPointEntity::class,
         MaintenanceTaskEntity::class,
-        ServiceLogEntity::class
+        ServiceLogEntity::class,
+        FuelLogEntity::class,
+        PartLogEntity::class,
+        ReminderEntity::class
     ],
     version = 1,
     exportSchema = false
