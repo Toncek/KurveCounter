@@ -46,7 +46,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                                         make = brand,
                                         model = model,
                                         startDateIso = startDateIso,
-                                        baseOdometerKm = startOdo.toDoubleOrNull() ?: 0.0,
+                                        baseOdometerKm = (startOdo.toDoubleOrNull() ?: 0.0),
                                         buyingPrice = buyingPrice.toDoubleOrNull() ?: 0.0
                                     )
                                 )

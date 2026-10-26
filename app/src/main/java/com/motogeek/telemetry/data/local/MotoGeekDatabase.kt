@@ -33,7 +33,10 @@ abstract class MotoGeekDatabase : RoomDatabase() {
                     context.applicationContext,
                     MotoGeekDatabase::class.java,
                     "motogeek_database"
-                ).fallbackToDestructiveMigration().build()
+                )
+                .fallbackToDestructiveMigration()
+                .allowMainThreadQueries()
+                .build()
                 INSTANCE = instance
                 instance
             }

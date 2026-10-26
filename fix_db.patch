@@ -1,0 +1,11 @@
+--- app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekDatabase.kt
++++ app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekDatabase.kt
+@@ -14,7 +14,7 @@
+         PartLogEntity::class,
+         ReminderEntity::class
+     ],
+-    version = 4,
++    version = 1,
+     exportSchema = false
+ )
+ abstract class MotoGeekDatabase : RoomDatabase() {
