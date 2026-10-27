@@ -15,9 +15,10 @@ import androidx.room.RoomDatabase
         ServiceLogEntity::class,
         FuelLogEntity::class,
         PartLogEntity::class,
-        ReminderEntity::class
+        ReminderEntity::class,
+        AppLogEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MotoGeekDatabase : RoomDatabase() {
@@ -33,7 +34,9 @@ abstract class MotoGeekDatabase : RoomDatabase() {
                     context.applicationContext,
                     MotoGeekDatabase::class.java,
                     "motogeek_database"
-                ).fallbackToDestructiveMigration().build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

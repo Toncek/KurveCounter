@@ -7,18 +7,25 @@ import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.UUID
 
 @Serializable
 data class ServiceChecklistItem(
     val name: String,
-    val status: String // "CHECKED" or "WARNING" or "INSPECT"
+    val status: String // "CHECKED", "WARNING", "SKIPPED", or "INSPECT"
 )
 
-val DefaultServiceChecklistItems = listOf(
-    "Battery System", "Light System", "Fuel System", "Engine Oil", "Engine Oil Filter",
-    "Air Filter", "Spark Plug", "Valve Clearance", "Idle RPM", "Lever: Clutch, Brake",
-    "Brake Pads", "Throttle", "Brake Oil", "Fork Oil", "Bearings", "Tire Air Pressure"
-).map { ServiceChecklistItem(it, "INSPECT") }
+val DefaultServiceChecklistNames = listOf(
+    "Engine Oil", "Engine Oil Filter", "Air Filter", "Spark Plugs",
+    "Drive Chain & Sprockets", "Brake Pads Front/Rear", "Brake Fluid", "Coolant / Radiator",
+    "Tire Pressure & Tread", "Clutch & Throttle Freeplay", "Steering Head Bearings",
+    "Front Fork Seals & Oil", "Rear Shock Absorber", "Battery & Charging System",
+    "Lights & Indicators", "Bolts & Fasteners Torque"
+)
+
+val DefaultServiceChecklistItems = DefaultServiceChecklistNames.map {
+    ServiceChecklistItem(it, "CHECKED")
+}
 
 @Serializable
 @Entity(
@@ -35,18 +42,31 @@ val DefaultServiceChecklistItems = listOf(
 )
 data class ServiceLogEntity(
     @PrimaryKey
-    val logId: String,
+    val logId: String = UUID.randomUUID().toString(),
     val motorcycleId: String,
     val taskId: String = "GENERAL_SERVICE",
+    val serviceTitle: String = "Periodic Maintenance",
+    val locationOrShop: String = "Home Garage",
     val performedAtIsoDate: String,
     val odometerAtServiceKm: Double,
-    val costEur: Double,
-    val performedBy: String,
-    val notes: String,
-    val serviceTitle: String = "Maintenance Service",
-    val locationOrShop: String = "Home",
-    val limitKm: Double = 5000.0,
     val servicedAtKm: Double = odometerAtServiceKm,
+    val limitKm: Double = 5000.0,
     val endKm: Double = servicedAtKm + limitKm,
-    val checklistItemsJson: String = Json.encodeToString(DefaultServiceChecklistItems)
-)
+    val costEur: Double = 0.0,
+    val performedBy: String = "Self",
+    val notes: String = "",
+    val checklistItemsJson: String = "[]"
+) {
+    fun parseChecklist(): List<ServiceChecklistItem> {
+        return try {
+            if (checklistItemsJson.isBlank() || checklistItemsJson == "[]") {
+                DefaultServiceChecklistItems
+            } else {
+                val json = Json { ignoreUnknownKeys = true; isLenient = true }
+                json.decodeFromString<List<ServiceChecklistItem>>(checklistItemsJson)
+            }
+        } catch (_: Exception) {
+            DefaultServiceChecklistItems
+        }
+    }
+}

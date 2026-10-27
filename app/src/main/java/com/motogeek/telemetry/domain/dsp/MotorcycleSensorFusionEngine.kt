@@ -65,8 +65,8 @@ private var cornerState = CornerState.STRAIGHT
         val (bikeGx, bikeGy, bikeGz) = calibrator.transform(fGx, fGy, fGz)
 
         // G-forces (divide by 9.80665)
-        currentLongitudinalG = bikeAx / 9.80665
-        currentLateralG = bikeAy / 9.80665
+        currentLongitudinalG = (bikeAx / 9.80665).takeIf { it.isFinite() } ?: 0.0
+        currentLateralG = (bikeAy / 9.80665).takeIf { it.isFinite() } ?: 0.0
 
         // Complementary filter for lean angle could be implemented here using gyro integration
         // For simplicity and to solve the lean angle trap, we strongly rely on kinematic lean from GPS

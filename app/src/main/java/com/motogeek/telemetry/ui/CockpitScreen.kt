@@ -488,8 +488,8 @@ fun GForceGauge(longitudinalG: Double, lateralG: Double) {
         }
 
         // Draw current G-force point
-        val currentX = center.x + (lateralG / maxG).toFloat() * radius
-        val currentY = center.y - (longitudinalG / maxG).toFloat() * radius
+        val currentX = center.x + (((lateralG / maxG).toFloat() * radius).takeIf { it.isFinite() } ?: 0f)
+        val currentY = center.y - (((longitudinalG / maxG).toFloat() * radius).takeIf { it.isFinite() } ?: 0f)
         drawCircle(
             color = Color(0xFFFF2A54),
             radius = 12f,
@@ -622,10 +622,10 @@ fun SparklineChart(title: String, data: List<Float>, color: Color, yRange: Close
 
                 val path = Path()
                 data.forEachIndexed { index, value ->
-                    // Normalize value to height
-                    val normalizedY = 1f - ((value - yRange.start) / (yRange.endInclusive - yRange.start))
-                    val x = index * pointWidth
-                    val y = normalizedY * height
+                    val rawNorm = (value - yRange.start) / (yRange.endInclusive - yRange.start)
+                    val normalizedY = (1f - rawNorm).takeIf { it.isFinite() } ?: 0.5f
+                    val x = (index * pointWidth).takeIf { it.isFinite() } ?: 0f
+                    val y = (normalizedY * height).takeIf { it.isFinite() } ?: 0f
 
                     if (index == 0) {
                         path.moveTo(x, y)

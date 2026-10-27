@@ -98,17 +98,16 @@ fun SynchronizedTelemetryChart(
                 }
 
                 fun getY(value: Double, maxVal: Double): Float {
-                    val normalized = (value / maxVal).coerceIn(-1.0, 1.0).toFloat()
-                    // 0 is bottom, 1 is top for simple positive values
-                    // For G's and Lean, -1 is bottom, 1 is top, 0 is middle
-                    // Let's normalize everything to 0 bottom, 1 top
+                    val safeMax = if (maxVal > 0) maxVal else 1.0
+                    val normalized = (value / safeMax).coerceIn(-1.0, 1.0).toFloat().takeIf { it.isFinite() } ?: 0f
                     val adjusted = (normalized + 1f) / 2f
-                    return height - (adjusted * height)
+                    return (height - (adjusted * height)).takeIf { it.isFinite() } ?: (height / 2f)
                 }
 
                 fun getPositiveY(value: Double, maxVal: Double): Float {
-                    val normalized = (value / maxVal).coerceIn(0.0, 1.0).toFloat()
-                    return height - (normalized * height)
+                    val safeMax = if (maxVal > 0) maxVal else 1.0
+                    val normalized = (value / safeMax).coerceIn(0.0, 1.0).toFloat().takeIf { it.isFinite() } ?: 0f
+                    return (height - (normalized * height)).takeIf { it.isFinite() } ?: height
                 }
 
                 val speedPath = Path()

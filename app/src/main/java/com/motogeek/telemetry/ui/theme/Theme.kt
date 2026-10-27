@@ -6,17 +6,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
-    primary = RacingRed,
-    secondary = TelemetryCyan,
-    background = DarkCharcoalBg,
-    surface = DrawerSurfaceBg,
-    error = CrimsonHeaderRed,
-    tertiary = ApexAmber,
+    primary = RacingAmberPrimary,
+    secondary = TelemetryIceCyan,
+    background = CarbonObsidianBg,
+    surface = TftSurfaceDark,
+    surfaceVariant = TftSurfaceElevated,
+    error = RedlineCrimson,
+    tertiary = WarningGold,
     onPrimary = Color.White,
     onSecondary = Color.Black,
     onBackground = Color.White,
     onSurface = Color.White,
-    outline = GlassmorphicBorder
+    outline = TitaniumBorder
 )
 
 @Composable

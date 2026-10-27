@@ -9,13 +9,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -78,7 +81,10 @@ class MainActivity : ComponentActivity() {
                                 scope.launch { viewModel.repository.selectActiveMotorcycle(bikeId) }
                             },
                             onAddNewBike = {
-                                navController.navigate("garage")
+                                navController.navigate("bike_info")
+                            },
+                            onSyncOdometer = { newKm ->
+                                viewModel.updateActiveBikeOdometer(newKm)
                             },
                             currentRoute = currentRoute,
                             onNavigate = { route ->
@@ -96,18 +102,48 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Scaffold(
                         topBar = {
-                            @OptIn(ExperimentalMaterial3Api::class)
-                            TopAppBar(
-                                title = { Text("MotoGeek", color = Color.White) },
-                                navigationIcon = {
-                                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                        Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
-                                    }
-                                },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = CrimsonHeaderRed
+                            if (currentRoute == "home" || currentRoute == null || currentRoute == "cockpit" || currentRoute == "history") {
+                                @OptIn(ExperimentalMaterial3Api::class)
+                                TopAppBar(
+                                    title = {
+                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                            Text(
+                                                text = "KURVE",
+                                                color = com.motogeek.telemetry.ui.theme.RacingAmberPrimary,
+                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Black,
+                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                letterSpacing = 1.sp
+                                            )
+                                            val subTitle = when (currentRoute) {
+                                                "cockpit" -> " // COCKPIT"
+                                                "history" -> " // HISTORY"
+                                                else -> " // TFT"
+                                            }
+                                            Text(
+                                                text = subTitle,
+                                                color = Color.White,
+                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                letterSpacing = 1.sp
+                                            )
+                                        }
+                                    },
+                                    navigationIcon = {
+                                        if (currentRoute == "cockpit" || currentRoute == "history") {
+                                            IconButton(onClick = { navController.navigate("home") { popUpTo("home") { inclusive = false } } }) {
+                                                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                            }
+                                        } else {
+                                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                                Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                            }
+                                        }
+                                    },
+                                    colors = TopAppBarDefaults.topAppBarColors(
+                                        containerColor = com.motogeek.telemetry.ui.theme.CarbonObsidianBg
+                                    )
                                 )
-                            )
+                            }
                         }
                     ) { innerPadding ->
                         NavHost(navController, startDestination = "home", Modifier.padding(innerPadding)) {
@@ -115,13 +151,14 @@ class MainActivity : ComponentActivity() {
                             composable("cockpit") {
                                 CockpitScreen(
                                     viewModel = viewModel,
-                                    onStartRide = { startRideService() },
+                                    onStartRide = { startRideService(activeBike?.id) },
                                     onStopRide = { stopRideService() }
                                 )
                             }
                             composable("history") { TelemetryHistoryScreen(viewModel) }
-                            composable("maintenance") { MaintenanceScreen(viewModel) }
-                            composable("garage") { GarageSettingsScreen(viewModel) }
+                            composable("maintenance") { MaintenanceServiceScreen(viewModel, navController) }
+                            composable("garage") { BikeInfoScreen(viewModel, navController) }
+                            composable("settings") { OfflineBackupScreen(viewModel, navController) }
                             composable("dashboard") { DashboardScreen(viewModel, navController) }
                             composable("export") { BikeDataExportScreen(viewModel, navController) }
                             composable("about") { AboutAndDiagnosticsScreen(viewModel, navController) }
@@ -131,6 +168,7 @@ class MainActivity : ComponentActivity() {
                             composable("reminders") { RemindersScreen(viewModel, navController) }
                             composable("logs") { LogsScreen(viewModel, navController) }
                             composable("offline_backup") { OfflineBackupScreen(viewModel, navController) }
+                            composable("cloud_backup") { OfflineBackupScreen(viewModel, navController) }
                         }
                     }
                 }
@@ -143,14 +181,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
         )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            permissions.add(Manifest.permission.FOREGROUND_SERVICE)
-        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            permissions.add(Manifest.permission.FOREGROUND_SERVICE_LOCATION)
         }
 
         val notGranted = permissions.filter {
@@ -162,10 +194,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startRideService() {
+    private fun startRideService(bikeId: String? = null) {
+        val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasFine && !hasCoarse) {
+            requestRequiredPermissions()
+            return
+        }
+
         val intent = Intent(this, TelemetryForegroundService::class.java).apply {
             action = TelemetryForegroundService.ACTION_START_RIDE
-            putExtra(TelemetryForegroundService.EXTRA_MOTORCYCLE_ID, "default_bike") // Demo usage
+            putExtra(TelemetryForegroundService.EXTRA_MOTORCYCLE_ID, bikeId ?: "default_bike")
         }
         ContextCompat.startForegroundService(this, intent)
     }
@@ -177,5 +216,3 @@ class MainActivity : ComponentActivity() {
         startService(intent)
     }
 }
-
-fun String.toSafeDouble(default: Double = 0.0): Double = this.replace(',', '.').trim().toDoubleOrNull() ?: default

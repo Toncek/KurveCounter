@@ -345,47 +345,267 @@ class ImportExportManager(private val context: Context, private val repository: 
         }
     }
 
-    suspend fun exportBikeServiceBookHtml(motorcycleId: String): Result<Uri> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    suspend fun shareBikeServiceBookHtml(motorcycleId: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
             val motorcycles = repository.getAllMotorcycles().first()
             val bike = motorcycles.find { it.id == motorcycleId } ?: throw Exception("Bike not found")
-            val services = repository.getServiceLogsForMotorcycle(motorcycleId)
+            val services = repository.getServiceLogsForMotorcycle(motorcycleId).sortedByDescending { it.performedAtIsoDate }
+            val parts = repository.getPartLogsForMotorcycleList(motorcycleId).sortedByDescending { it.dateIso }
+            val fuelLogs = repository.getFuelLogsForMotorcycleList(motorcycleId)
+
+            val totalFuelLiters = fuelLogs.sumOf { it.liters }
+            val totalFuelCost = fuelLogs.sumOf { it.totalCost }
+            val totalServiceCost = services.sumOf { it.costEur }
+            val totalPartsCost = parts.sumOf { it.cost }
 
             val html = """
-                <html><body>
-                <h1>Service Book: \${bike.displayName}</h1>
-                <p>Odometer: \${bike.totalOdometerKm} km</p>
-                <h2>Services</h2>
-                <ul>
-                \${services.joinToString("") { "<li>\${it.performedAtIsoDate} - \${it.serviceTitle} (\${it.odometerAtServiceKm} km)</li>" }}
-                </ul>
-                </body></html>
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Digital Service Book - ${bike.displayName}</title>
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #0b0e14; color: #e0e0e0; margin: 0; padding: 24px; }
+                        .container { max-width: 800px; margin: 0 auto; background: #131822; padding: 32px; border-radius: 12px; border: 1px solid #2a3447; }
+                        h1 { color: #ff5f1f; margin-top: 0; font-size: 26px; }
+                        h2 { color: #00e5ff; font-size: 18px; border-bottom: 1px solid #2a3447; padding-bottom: 8px; margin-top: 28px; }
+                        .hero { display: flex; justify-content: space-between; margin-bottom: 24px; background: #1c2331; padding: 16px; border-radius: 8px; }
+                        .metric-value { font-size: 20px; font-weight: bold; color: #00e5ff; font-family: monospace; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+                        th { background: #1c2331; color: #ff5f1f; text-align: left; padding: 10px; border-bottom: 1px solid #2a3447; }
+                        td { padding: 10px; border-bottom: 1px solid #2a3447; }
+                        .badge { background: rgba(0, 230, 118, 0.15); color: #00e676; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+                        .footer { margin-top: 36px; text-align: center; color: #6b7a99; font-size: 11px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>KURVE // DIGITAL SERVICE BOOK</h1>
+                        <div class="hero">
+                            <div>
+                                <strong style="font-size: 18px; color: #fff;">${bike.displayName.uppercase()}</strong><br>
+                                <span style="color: #999;">${bike.year} • ${bike.engineDisplacementCc} CC • ${bike.type}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="metric-value">${String.format("%,d", bike.totalOdometerKm.toInt())} KM</div>
+                                <span style="color: #999;">Total Odometer</span>
+                            </div>
+                        </div>
+
+                        <h2>Financial & Garage Summary</h2>
+                        <table>
+                            <tr>
+                                <td><strong>Total Service Spend:</strong> ${totalServiceCost.toInt()} ${bike.currencySymbol}</td>
+                                <td><strong>Total Parts Spend:</strong> ${totalPartsCost.toInt()} ${bike.currencySymbol}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Total Fuel Spend:</strong> ${totalFuelCost.toInt()} ${bike.currencySymbol}</td>
+                                <td><strong>Total Fuel Volume:</strong> ${String.format("%.1f", totalFuelLiters)} L</td>
+                            </tr>
+                        </table>
+
+                        <h2>Periodic Maintenance & Service Records (${services.size})</h2>
+                        ${if (services.isEmpty()) "<p style='color: #888;'>No service records logged yet.</p>" else """
+                        <table>
+                            <thead>
+                                <tr><th>Date</th><th>Odometer</th><th>Service Item</th><th>Location/Shop</th><th>Cost</th></tr>
+                            </thead>
+                            <tbody>
+                                ${services.joinToString("") { s ->
+                                    "<tr><td>${s.performedAtIsoDate}</td><td>${s.odometerAtServiceKm.toInt()} km</td><td><strong>${s.serviceTitle}</strong><br><span style='color:#888;'>${s.notes}</span></td><td>${s.locationOrShop}</td><td>${s.costEur.toInt()} ${bike.currencySymbol}</td></tr>"
+                                }}
+                            </tbody>
+                        </table>
+                        """}
+
+                        <h2>Installed Modifications & Replacement Parts (${parts.size})</h2>
+                        ${if (parts.isEmpty()) "<p style='color: #888;'>No aftermarket parts or repairs logged.</p>" else """
+                        <table>
+                            <thead>
+                                <tr><th>Date</th><th>Odometer</th><th>Part Name</th><th>Brand / Part #</th><th>Cost</th></tr>
+                            </thead>
+                            <tbody>
+                                ${parts.joinToString("") { p ->
+                                    "<tr><td>${p.dateIso}</td><td>${p.odometerKm.toInt()} km</td><td><strong>${p.partName}</strong></td><td>${p.brand} ${p.partNumber}</td><td>${p.cost.toInt()} ${bike.currencySymbol}</td></tr>"
+                                }}
+                            </tbody>
+                        </table>
+                        """}
+
+                        <div class="footer">
+                            Generated by KurveCounter MotoGeek Telemetry • Verified Garage Record
+                        </div>
+                    </div>
+                </body>
+                </html>
             """.trimIndent()
 
-            val uri = Uri.fromFile(java.io.File(context.cacheDir, "service_book.html"))
-            context.contentResolver.openOutputStream(uri)?.use { os ->
-                OutputStreamWriter(os).use { writer -> writer.write(html) }
-            }
-            Result.success(uri)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+            val sharedDir = java.io.File(context.cacheDir, "shared_files").apply { mkdirs() }
+            val file = java.io.File(sharedDir, "service_book_${bike.make}_${bike.model}.html")
+            file.writeText(html)
 
-    suspend fun exportAllLogsAsCsv(uri: Uri, motorcycleId: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            // Simplified CSV generation
-            context.contentResolver.openOutputStream(uri)?.use { os ->
-                OutputStreamWriter(os).use { writer ->
-                    writer.write("Type,Date,Odometer,Details\n")
-                    val services = repository.getServiceLogsForMotorcycle(motorcycleId)
-                    services.forEach { writer.write("Service,\${it.performedAtIsoDate},\${it.odometerAtServiceKm},\${it.serviceTitle}\n") }
-                }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/html"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "Digital Service Book - ${bike.displayName}")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            context.startActivity(android.content.Intent.createChooser(intent, "Share Service Book").apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    suspend fun shareAllLogsCsv(motorcycleId: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val motorcycles = repository.getAllMotorcycles().first()
+            val bike = motorcycles.find { it.id == motorcycleId } ?: throw Exception("Bike not found")
+            val services = repository.getServiceLogsForMotorcycle(motorcycleId)
+            val parts = repository.getPartLogsForMotorcycleList(motorcycleId)
+            val fuelLogs = repository.getFuelLogsForMotorcycleList(motorcycleId)
+
+            val csvBuilder = StringBuilder()
+            csvBuilder.append("Category,Date,OdometerKm,TitleOrItem,BrandOrShop,Cost,Notes\n")
+
+            services.forEach { s ->
+                csvBuilder.append("SERVICE,${s.performedAtIsoDate},${s.odometerAtServiceKm},\"${s.serviceTitle}\",\"${s.locationOrShop}\",${s.costEur},\"${s.notes}\"\n")
+            }
+            parts.forEach { p ->
+                csvBuilder.append("PART,${p.dateIso},${p.odometerKm},\"${p.partName}\",\"${p.brand} ${p.partNumber}\",${p.cost},\"${p.notes}\"\n")
+            }
+            fuelLogs.forEach { f ->
+                csvBuilder.append("FUEL,${f.dateIso},${f.odometerKm},\"${f.liters} Liters\",\"FullTank: ${f.isFullTank}\",${f.totalCost},\"${f.notes}\"\n")
+            }
+
+            val sharedDir = java.io.File(context.cacheDir, "shared_files").apply { mkdirs() }
+            val file = java.io.File(sharedDir, "garage_logs_${bike.make}_${bike.model}.csv")
+            file.writeText(csvBuilder.toString())
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "Garage Logs CSV - ${bike.displayName}")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(android.content.Intent.createChooser(intent, "Share Logs CSV").apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun shareRideGpx(rideId: Long): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val trackPoints = repository.getTelemetryTrackPointsListForRide(rideId)
+            val session = repository.getRideSessionById(rideId)
+
+            val gpxBuilder = StringBuilder()
+            gpxBuilder.append("""<?xml version="1.0" encoding="UTF-8"?>""").append("\n")
+            gpxBuilder.append("""<gpx version="1.1" creator="KurveCounter MotoGeek Telemetry">""").append("\n")
+            gpxBuilder.append("  <trk>\n")
+            gpxBuilder.append("    <name>${session?.name ?: "Ride $rideId"}</name>\n")
+            gpxBuilder.append("    <trkseg>\n")
+
+            trackPoints.forEach { pt ->
+                val isoTime = java.time.Instant.ofEpochMilli(pt.timestampMs).toString()
+                gpxBuilder.append("""      <trkpt lat="${pt.latitude}" lon="${pt.longitude}">""").append("\n")
+                gpxBuilder.append("""        <ele>${pt.altitudeMeters}</ele>""").append("\n")
+                gpxBuilder.append("""        <time>$isoTime</time>""").append("\n")
+                gpxBuilder.append("""        <extensions>""").append("\n")
+                gpxBuilder.append("""          <speedKmh>${pt.speedKmh}</speedKmh>""").append("\n")
+                gpxBuilder.append("""          <leanDeg>${pt.leanAngleDeg}</leanDeg>""").append("\n")
+                gpxBuilder.append("""          <lateralG>${pt.lateralG}</lateralG>""").append("\n")
+                gpxBuilder.append("""        </extensions>""").append("\n")
+                gpxBuilder.append("""      </trkpt>""").append("\n")
+            }
+
+            gpxBuilder.append("    </trkseg>\n")
+            gpxBuilder.append("  </trk>\n")
+            gpxBuilder.append("</gpx>\n")
+
+            val sharedDir = java.io.File(context.cacheDir, "shared_files").apply { mkdirs() }
+            val file = java.io.File(sharedDir, "ride_${rideId}.gpx")
+            file.writeText(gpxBuilder.toString())
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "application/gpx+xml"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "Ride GPX - Ride #$rideId")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(android.content.Intent.createChooser(intent, "Share GPX Track").apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun shareRideGoProCsv(rideId: Long): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val trackPoints = repository.getTelemetryTrackPointsListForRide(rideId)
+
+            val csvBuilder = StringBuilder()
+            csvBuilder.append("TimestampMs,Latitude,Longitude,AltitudeM,SpeedKmh,LeanAngleDeg,LongitudinalG,LateralG\n")
+            trackPoints.forEach { pt ->
+                csvBuilder.append("${pt.timestampMs},${pt.latitude},${pt.longitude},${pt.altitudeMeters},${pt.speedKmh},${pt.leanAngleDeg},${pt.longitudinalG},${pt.lateralG}\n")
+            }
+
+            val sharedDir = java.io.File(context.cacheDir, "shared_files").apply { mkdirs() }
+            val file = java.io.File(sharedDir, "telemetry_overlay_${rideId}.csv")
+            file.writeText(csvBuilder.toString())
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "GoPro/Telemetry Overlay CSV - Ride #$rideId")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(android.content.Intent.createChooser(intent, "Share GoPro Telemetry CSV").apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
+

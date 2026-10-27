@@ -34,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -136,9 +137,31 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
 
         // Persist initial Ride Session
         lifecycleScope.launch(Dispatchers.IO) {
+            val validBike = if (motorcycleId.isNotBlank()) repository.getMotorcycleById(motorcycleId) else null
+            val resolvedBikeId = validBike?.id
+                ?: repository.getActiveMotorcycle()?.id
+                ?: repository.getAllMotorcycles().firstOrNull()?.firstOrNull()?.id
+                ?: run {
+                    val fallback = com.motogeek.telemetry.data.local.MotorcycleEntity(
+                        id = java.util.UUID.randomUUID().toString(),
+                        make = "Universal",
+                        model = "Motorcycle",
+                        year = 2024,
+                        engineDisplacementCc = 650,
+                        baseOdometerKm = 0.0,
+                        accumulatedTrackedKm = 0.0,
+                        manualAdjustmentOffsetKm = 0.0,
+                        technicalSpecsJson = "{}",
+                        isActive = true
+                    )
+                    repository.insertMotorcycle(fallback)
+                    fallback.id
+                }
+            motorcycleId = resolvedBikeId
+
             activeRideId = repository.insertRideSession(
                 RideSessionEntity(
-                    motorcycleId = motorcycleId,
+                    motorcycleId = resolvedBikeId,
                     startTimeEpochMs = startTimeMs,
                     endTimeEpochMs = 0L,
                     distanceKm = 0.0,
@@ -172,13 +195,18 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private fun startForegroundServiceWithNotification() {
+        val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasFine && !hasCoarse) {
+            stopSelf()
+            return
+        }
+
         val notification = buildNotification()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(this, NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } else {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED || androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             startForeground(NOTIF_ID, notification)
-        }
         }
     }
 

@@ -152,11 +152,10 @@ fun RideTrajectoryHeatmapCanvas(
                             }
                         }
                         HeatmapMode.SPEED -> {
-                            val speedRatio = p1.speedKmh / maxSpeed
-                            // Cyan to Magenta
+                            val speedRatio = (p1.speedKmh / maxSpeed).coerceIn(0.0, 1.0).toFloat().takeIf { it.isFinite() } ?: 0f
                             Color(
-                                red = speedRatio.toFloat(),
-                                green = (1f - speedRatio).toFloat(),
+                                red = speedRatio,
+                                green = 1f - speedRatio,
                                 blue = 1f
                             )
                         }
