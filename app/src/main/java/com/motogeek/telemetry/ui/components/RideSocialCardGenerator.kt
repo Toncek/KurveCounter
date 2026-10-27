@@ -74,8 +74,8 @@ object RideSocialCardGenerator {
             val usableWidth = mapRect.width() - 80f
             val usableHeight = mapRect.height() - 80f
 
-            val scaleX = if (lonDiff > 0) usableWidth / lonDiff.toFloat() else 1f
-            val scaleY = if (latDiff > 0) usableHeight / latDiff.toFloat() else 1f
+            val scaleX = if (lonDiff > 0) (usableWidth / lonDiff.toFloat()).takeIf { it.isFinite() } ?: 1f else 1f
+            val scaleY = if (latDiff > 0) (usableHeight / latDiff.toFloat()).takeIf { it.isFinite() } ?: 1f else 1f
             val scale = min(scaleX, scaleY)
 
             val xOffset = mapRect.left + 40f + (usableWidth - lonDiff.toFloat() * scale) / 2f

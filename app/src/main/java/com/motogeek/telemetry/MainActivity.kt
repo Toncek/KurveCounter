@@ -122,7 +122,9 @@ class MainActivity : ComponentActivity() {
                             composable("history") { TelemetryHistoryScreen(viewModel) }
                             composable("maintenance") { MaintenanceScreen(viewModel) }
                             composable("garage") { GarageSettingsScreen(viewModel) }
-                            composable("dashboard") { Text("Dashboard Placeholder") }
+                            composable("dashboard") { DashboardScreen(viewModel, navController) }
+                            composable("export") { BikeDataExportScreen(viewModel, navController) }
+                            composable("about") { AboutAndDiagnosticsScreen(viewModel, navController) }
                             composable("bike_info") { BikeInfoScreen(viewModel, navController) }
                             composable("fuel") { FuelScreen(viewModel, navController) }
                             composable("parts") { PartsScreen(viewModel, navController) }
@@ -175,3 +177,5 @@ class MainActivity : ComponentActivity() {
         startService(intent)
     }
 }
+
+fun String.toSafeDouble(default: Double = 0.0): Double = this.replace(',', '.').trim().toDoubleOrNull() ?: default

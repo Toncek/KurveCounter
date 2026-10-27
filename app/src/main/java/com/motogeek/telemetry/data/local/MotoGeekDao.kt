@@ -107,4 +107,16 @@ interface MotoGeekDao {
     suspend fun insertReminder(reminder: ReminderEntity)
     @Query("SELECT * FROM reminders WHERE motorcycleId = :motorcycleId")
     fun getRemindersForMotorcycle(motorcycleId: String): Flow<List<ReminderEntity>>
+
+    @Query("SELECT SUM(costEur) FROM service_logs WHERE motorcycleId = :motorcycleId")
+    suspend fun getTotalServiceCost(motorcycleId: String): Double?
+
+    @Query("SELECT SUM(cost) FROM part_logs WHERE motorcycleId = :motorcycleId")
+    suspend fun getTotalPartsCost(motorcycleId: String): Double?
+
+    @Query("SELECT SUM(totalCost) FROM fuel_logs WHERE motorcycleId = :motorcycleId")
+    suspend fun getTotalFuelCost(motorcycleId: String): Double?
+
+    @Query("SELECT SUM(liters) * 100.0 / SUM(odometerKm) FROM fuel_logs WHERE motorcycleId = :motorcycleId AND odometerKm > 0")
+    fun getAvgFuelConsumption(motorcycleId: String): Flow<Double?>
 }

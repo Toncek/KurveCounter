@@ -28,7 +28,7 @@ import kotlinx.serialization.decodeFromString
 @Composable
 fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavController) {
     var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabs = listOf("LAST SERVICE", "PREVIOUS SERVICES")
+    val tabs = listOf("LAST SERVICE", "PREVIOUS SERVICES", "INTERVAL SCHEDULE")
     val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)
 
     val serviceLogs by produceState(initialValue = emptyList<ServiceLogEntity>(), activeBike) {
@@ -67,12 +67,30 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
                 }
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(serviceLogs) { log ->
-                    ServiceLogCard(log)
+            when (selectedTabIndex) {
+                0 -> {
+                    val last = serviceLogs.firstOrNull()
+                    if (last != null) {
+                        Box(modifier = Modifier.padding(16.dp)) {
+                            ServiceLogCard(last)
+                        }
+                    }
+                }
+                1 -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(serviceLogs) { log ->
+                            ServiceLogCard(log)
+                        }
+                    }
+                }
+                2 -> {
+                    // Simplified implementation for Interval Schedule
+                    Box(modifier = Modifier.padding(16.dp)) {
+                        Text("Interval Schedule", color = Color.White)
+                    }
                 }
             }
         }

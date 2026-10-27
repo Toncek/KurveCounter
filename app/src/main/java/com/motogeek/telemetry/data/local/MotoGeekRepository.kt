@@ -117,4 +117,9 @@ class MotoGeekRepository(private val dao: MotoGeekDao) {
     suspend fun insertReminder(reminder: ReminderEntity) { dao.insertReminder(reminder) }
     fun getRemindersForMotorcycle(motorcycleId: String): Flow<List<ReminderEntity>> =
         dao.getRemindersForMotorcycle(motorcycleId)
+
+    suspend fun getTotalServiceCost(motorcycleId: String): Double? = dao.getTotalServiceCost(motorcycleId)
+    suspend fun getTotalPartsCost(motorcycleId: String): Double? = dao.getTotalPartsCost(motorcycleId)
+    suspend fun getTotalFuelCost(motorcycleId: String): Double? = dao.getTotalFuelCost(motorcycleId)
+    fun getAvgFuelConsumption(motorcycleId: String): Flow<Double?> = dao.getAvgFuelConsumption(motorcycleId)
 }
