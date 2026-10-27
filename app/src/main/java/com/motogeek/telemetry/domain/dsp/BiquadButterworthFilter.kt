@@ -30,7 +30,7 @@ class BiquadButterworthFilter(
         val omega = 2.0 * PI * (cutoffHz / nyquist)
         val sn = sin(omega)
         val cs = cos(omega)
-        val alpha = sn / (2.0 * 1.0 / sqrt(2.0))
+        val alpha = (sn / (2.0 * 1.0 / sqrt(2.0))).takeIf { it.isFinite() } ?: 0.0
 
         val b0 = (1.0 - cs) / 2.0
         val a0Temp = 1.0 + alpha
@@ -48,7 +48,7 @@ class BiquadButterworthFilter(
         x1 = sample
         y2 = y1
         y1 = y
-        return y
+        return y.takeIf { it.isFinite() } ?: 0.0
     }
 
     fun reset() {

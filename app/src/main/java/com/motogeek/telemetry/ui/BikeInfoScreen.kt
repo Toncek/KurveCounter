@@ -14,6 +14,7 @@ import androidx.navigation.NavController
 import com.motogeek.telemetry.ui.components.ActiveBikeDropdownCard
 import com.motogeek.telemetry.ui.components.SegmentedDigitalText
 import com.motogeek.telemetry.ui.theme.CrimsonHeaderRed
+import com.motogeek.telemetry.toSafeDouble
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -22,6 +23,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
     val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)
     val allBikes by viewModel.repository.getAllMotorcycles().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var name by remember(activeBike) { mutableStateOf(activeBike?.name ?: "") }
     var type by remember(activeBike) { mutableStateOf(activeBike?.type ?: "") }
@@ -32,6 +34,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
     var buyingPrice by remember(activeBike) { mutableStateOf(activeBike?.buyingPrice?.toString() ?: "") }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Bike Information", color = Color.White) },
@@ -46,10 +49,11 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                                         make = brand,
                                         model = model,
                                         startDateIso = startDateIso,
-                                        baseOdometerKm = startOdo.toDoubleOrNull() ?: 0.0,
-                                        buyingPrice = buyingPrice.toDoubleOrNull() ?: 0.0
+                                        baseOdometerKm = startOdo.toSafeDouble(),
+                                        buyingPrice = buyingPrice.toSafeDouble()
                                     )
                                 )
+                                snackbarHostState.showSnackbar("Saved")
                             }
                         }
                     }) {

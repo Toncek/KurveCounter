@@ -40,6 +40,18 @@ data class MotorcycleDto(
 @Serializable
 data class TechnicalSpecsDto(
     val oilCapacityLiters: Double? = null,
+    val oilCapacityNoFilterLiters: Double? = null,
+    val oilTotalDryCapacityLiters: Double? = null,
+    val oilViscosityAndSpec: String = "",
+    val coolantCapacityLiters: Double? = null,
+    val forkOilCapacityPerLegMl: Double? = null,
+    val forkOilWeight: String = "",
+    val brakeFluidType: String = "DOT 4",
+    val valveClearanceIntakeMm: String = "",
+    val valveClearanceExhaustMm: String = "",
+    val sparkPlugModel: String = "",
+    val sparkPlugGapMm: String = "",
+    val idleSpeedRpm: String = "",
     val frontTirePressurePsi: Double? = null,
     val rearTirePressurePsi: Double? = null,
     val chainSlackMm: String? = null,

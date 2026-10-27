@@ -114,8 +114,8 @@ fun RideTrajectoryHeatmapCanvas(
 
                 // Calculate scale to fit while preserving aspect ratio
                 // Since this is generic, we use a simple projection
-                val scaleX = if (lonDiff > 0) usableWidth / lonDiff.toFloat() else 1f
-                val scaleY = if (latDiff > 0) usableHeight / latDiff.toFloat() else 1f
+                val scaleX = if (lonDiff > 0) (usableWidth / lonDiff.toFloat()).takeIf { it.isFinite() } ?: 1f else 1f
+                val scaleY = if (latDiff > 0) (usableHeight / latDiff.toFloat()).takeIf { it.isFinite() } ?: 1f else 1f
                 val scale = min(scaleX, scaleY)
 
                 val xOffset = (usableWidth - lonDiff.toFloat() * scale) / 2f + padding

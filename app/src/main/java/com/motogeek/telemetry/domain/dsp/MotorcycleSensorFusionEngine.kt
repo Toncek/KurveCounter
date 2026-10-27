@@ -29,7 +29,12 @@ class MotorcycleSensorFusionEngine(
 
     // State machine for corner detection
     private enum class CornerState { STRAIGHT, CORNER_CANDIDATE, CONFIRMED_CORNER }
-    private var cornerState = CornerState.STRAIGHT
+private var cornerState = CornerState.STRAIGHT
+
+    // Auto Pause
+    private var lastStopStartTimeMs: Long = 0
+    var isAutoPaused = false
+        private set
     private var cornerStartTimeMs = 0L
     private var cornerMaxLean = 0.0
     private var cornerEntrySpeed = 0.0
@@ -68,7 +73,8 @@ class MotorcycleSensorFusionEngine(
         // but update it with integrated roll rate for high frequency
         val rollRateDeg = Math.toDegrees(bikeGx)
         val dt = 0.01 // 100Hz
-        currentLeanAngleDeg += rollRateDeg * dt
+        val delta = (rollRateDeg * dt).takeIf { it.isFinite() } ?: 0.0
+        currentLeanAngleDeg += delta
 
         // Hysteresis State Machine for Corner Detection
         updateCornerStateMachine(timestampMs, rollRateDeg)
@@ -77,6 +83,17 @@ class MotorcycleSensorFusionEngine(
     fun processLocation(location: Location) {
         val speedMs = location.speed.toDouble()
         currentSpeedKmh = speedMs * 3.6
+if (speedMs * 3.6 < 1.5) {
+            if (lastStopStartTimeMs == 0L) {
+                lastStopStartTimeMs = location.time
+            } else if (location.time - lastStopStartTimeMs > 10000) {
+                isAutoPaused = true
+            }
+        } else if (speedMs * 3.6 > 5.0) {
+            lastStopStartTimeMs = 0L
+            isAutoPaused = false
+        }
+
         lastLat = location.latitude
         lastLon = location.longitude
 
@@ -92,7 +109,7 @@ class MotorcycleSensorFusionEngine(
                 val yawRateRadSec = Math.toRadians(normBearingChange / dtSec)
 
                 // Kinematic Lean Angle: phi = atan((v * w) / g)
-                val kinematicLeanRad = atan2(speedMs * yawRateRadSec, 9.80665)
+                val kinematicLeanRad = atan2((speedMs * yawRateRadSec).takeIf { it.isFinite() } ?: 0.0, 9.80665)
                 val kinematicLeanDeg = Math.toDegrees(kinematicLeanRad)
 
                 // Try calibrating if not calibrated

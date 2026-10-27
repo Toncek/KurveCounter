@@ -176,7 +176,9 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(this, NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } else {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED || androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             startForeground(NOTIF_ID, notification)
+        }
         }
     }
 
@@ -220,9 +222,9 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         barometer = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)
 
         val samplingPeriodUs = 10_000 // 100 Hz
-        sensorManager.registerListener(this, accelerometer, samplingPeriodUs, sensorHandler)
-        sensorManager.registerListener(this, gyroscope, samplingPeriodUs, sensorHandler)
-        sensorManager.registerListener(this, barometer, samplingPeriodUs, sensorHandler)
+        accelerometer?.let { sensorManager.registerListener(this, it, samplingPeriodUs, sensorHandler) }
+        gyroscope?.let { sensorManager.registerListener(this, it, samplingPeriodUs, sensorHandler) }
+        barometer?.let { sensorManager.registerListener(this, it, samplingPeriodUs, sensorHandler) }
     }
 
     private fun requestLocationUpdates() {
@@ -346,7 +348,8 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 rightCorners = fusionEngine.rightCorners,
                 calibrationStatus = if (fusionEngine.calibrator.isCalibrated) "LOCKED" else "CALIBRATING POCKET MODE",
                 distanceKm = accumulatedDistanceKm,
-                durationSeconds = durationSec
+                durationSeconds = durationSec,
+                isPaused = isPaused || fusionEngine.isAutoPaused
             )
         }
     }

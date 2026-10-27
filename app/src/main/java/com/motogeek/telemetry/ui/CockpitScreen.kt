@@ -477,8 +477,8 @@ fun GForceGauge(longitudinalG: Double, lateralG: Double) {
         trailPoints.forEachIndexed { index, point ->
             val alpha = (index + 1) / trailPoints.size.toFloat()
             val pointRadius = 10f * alpha
-            val x = center.x + (point.second / maxG).toFloat() * radius
-            val y = center.y - (point.first / maxG).toFloat() * radius // Invert Y so positive long G is up
+            val x = center.x + (((point.second / maxG).toFloat() * radius).takeIf { it.isFinite() } ?: 0f)
+            val y = center.y - (((point.first / maxG).toFloat() * radius).takeIf { it.isFinite() } ?: 0f) // Invert Y so positive long G is up
 
             drawCircle(
                 color = Color(0xFF00E5FF).copy(alpha = alpha),

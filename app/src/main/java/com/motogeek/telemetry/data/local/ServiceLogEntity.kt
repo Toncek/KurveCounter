@@ -37,7 +37,7 @@ data class ServiceLogEntity(
     @PrimaryKey
     val logId: String,
     val motorcycleId: String,
-    val taskId: String,
+    val taskId: String = "GENERAL_SERVICE",
     val performedAtIsoDate: String,
     val odometerAtServiceKm: Double,
     val costEur: Double,
@@ -46,6 +46,7 @@ data class ServiceLogEntity(
     val serviceTitle: String = "Maintenance Service",
     val locationOrShop: String = "Home",
     val limitKm: Double = 5000.0,
-    val endKm: Double = odometerAtServiceKm + 5000.0,
+    val servicedAtKm: Double = odometerAtServiceKm,
+    val endKm: Double = servicedAtKm + limitKm,
     val checklistItemsJson: String = Json.encodeToString(DefaultServiceChecklistItems)
 )

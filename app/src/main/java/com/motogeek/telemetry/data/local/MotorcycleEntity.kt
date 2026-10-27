@@ -17,13 +17,16 @@ data class MotorcycleEntity(
     val accumulatedTrackedKm: Double,
     val manualAdjustmentOffsetKm: Double,
     val technicalSpecsJson: String,
-    val isActive: Boolean,
+    val isActive: Boolean = false,
     val name: String = "",
     val type: String = "MotorCycle",
-    val startDateIso: String = "23/12/2024",
+    val startDateIso: String = "01/01/2025",
     val buyingPrice: Double = 0.0,
-    val currencySymbol: String = "฿"
+    val currencySymbol: String = "€"
 ) {
     val totalOdometerKm: Double
         get() = baseOdometerKm + accumulatedTrackedKm + manualAdjustmentOffsetKm
+
+    val displayName: String
+        get() = name.ifBlank { "$make $model".trim() }
 }

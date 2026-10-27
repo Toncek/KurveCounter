@@ -45,9 +45,9 @@ class PocketModeCalibrator {
             sumZ += v.third
         }
         val count = calibrationBuffer.size.toDouble()
-        val avgX = sumX / count
-        val avgY = sumY / count
-        val avgZ = sumZ / count
+        val avgX = (sumX / count).takeIf { it.isFinite() } ?: 0.0
+        val avgY = (sumY / count).takeIf { it.isFinite() } ?: 0.0
+        val avgZ = (sumZ / count).takeIf { it.isFinite() } ?: 0.0
 
         // Gravity points DOWN, so we want the UP vector
         val zBike = normalize(Triple(-avgX, -avgY, -avgZ))
@@ -95,7 +95,7 @@ class PocketModeCalibrator {
 
     private fun normalize(v: Triple<Double, Double, Double>): Triple<Double, Double, Double> {
         val mag = magnitude(v)
-        return if (mag == 0.0) v else Triple(v.first / mag, v.second / mag, v.third / mag)
+        return if (mag == 0.0 || !mag.isFinite()) v else Triple(v.first / mag, v.second / mag, v.third / mag)
     }
 
     private fun magnitude(v: Triple<Double, Double, Double>): Double {

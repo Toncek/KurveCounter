@@ -94,7 +94,7 @@ fun SynchronizedTelemetryChart(
                 val height = size.height
 
                 fun getX(timestampMs: Long): Float {
-                    return if (duration > 0) ((timestampMs - minTime).toFloat() / duration.toFloat()) * width else 0f
+                    return if (duration > 0) (((timestampMs - minTime).toFloat() / duration.toFloat()) * width).takeIf { it.isFinite() } ?: 0f else 0f
                 }
 
                 fun getY(value: Double, maxVal: Double): Float {

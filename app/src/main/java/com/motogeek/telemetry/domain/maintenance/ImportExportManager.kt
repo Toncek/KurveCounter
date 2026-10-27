@@ -19,6 +19,7 @@ data class ImportSummary(
 class ImportExportManager(private val context: Context, private val repository: MotoGeekRepository) {
 
     private val json = Json {
+        encodeDefaults = true
         ignoreUnknownKeys = true
         isLenient = true
         coerceInputValues = true
@@ -28,6 +29,7 @@ class ImportExportManager(private val context: Context, private val repository: 
 
     val aiServiceManualPrompt: String = """
         You are an expert motorcycle mechanic. I am providing you with the service manual for a motorcycle.
+        Extract periodic maintenance items, fluids specifications, and full bolt tightening torques into the JSON format provided. Include boltTorquesNm as a key-value map mapping bolt names to numeric torque values in Nm. Ensure oilCapacityLiters is numeric.
         Please extract the maintenance schedule and technical specifications into the following strict JSON format.
         Do NOT output any markdown blocks or extra text, only the raw JSON.
 
@@ -70,6 +72,7 @@ class ImportExportManager(private val context: Context, private val repository: 
     }
 
     suspend fun importFromJsonString(rawJson: String, targetMotorcycleId: String?): Result<ImportSummary> {
+        val sanitizedJson = rawJson.replace(Regex("```json|```"), "").trim()
         return try {
             val cleanedJson = sanitizeJsonInput(rawJson)
             val jsonElement = Json.parseToJsonElement(cleanedJson).jsonObject
@@ -341,4 +344,48 @@ class ImportExportManager(private val context: Context, private val repository: 
             Result.failure(e)
         }
     }
+
+    suspend fun exportBikeServiceBookHtml(motorcycleId: String): Result<Uri> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val motorcycles = repository.getAllMotorcycles().first()
+            val bike = motorcycles.find { it.id == motorcycleId } ?: throw Exception("Bike not found")
+            val services = repository.getServiceLogsForMotorcycle(motorcycleId)
+
+            val html = """
+                <html><body>
+                <h1>Service Book: \${bike.displayName}</h1>
+                <p>Odometer: \${bike.totalOdometerKm} km</p>
+                <h2>Services</h2>
+                <ul>
+                \${services.joinToString("") { "<li>\${it.performedAtIsoDate} - \${it.serviceTitle} (\${it.odometerAtServiceKm} km)</li>" }}
+                </ul>
+                </body></html>
+            """.trimIndent()
+
+            val uri = Uri.fromFile(java.io.File(context.cacheDir, "service_book.html"))
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                OutputStreamWriter(os).use { writer -> writer.write(html) }
+            }
+            Result.success(uri)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun exportAllLogsAsCsv(uri: Uri, motorcycleId: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            // Simplified CSV generation
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                OutputStreamWriter(os).use { writer ->
+                    writer.write("Type,Date,Odometer,Details\n")
+                    val services = repository.getServiceLogsForMotorcycle(motorcycleId)
+                    services.forEach { writer.write("Service,\${it.performedAtIsoDate},\${it.odometerAtServiceKm},\${it.serviceTitle}\n") }
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
 }
