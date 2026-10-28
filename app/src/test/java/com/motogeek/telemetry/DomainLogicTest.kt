@@ -7,6 +7,7 @@ import com.motogeek.telemetry.domain.maintenance.MaintenanceEvaluator
 import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
 import com.motogeek.telemetry.domain.maintenance.TaskStatus
 import com.motogeek.telemetry.domain.toSafeDouble
+import com.motogeek.telemetry.domain.dsp.BiquadButterworthFilter
 import com.motogeek.telemetry.domain.toSafeInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -159,5 +160,26 @@ class DomainLogicTest {
         val validLiters = 12.5
         val validLPer100 = (validLiters / validDistance) * 100.0
         assertEquals(5.0, validLPer100, 0.001)
+    }
+
+    @Test
+    fun testBiquadButterworthFilter() {
+        val filter = BiquadButterworthFilter(sampleRateHz = 100.0, cutoffHz = 3.5)
+
+        // 1. DC input convergence
+        var output = 0.0
+        for (i in 1..50) {
+            output = filter.process(10.0)
+        }
+        assertEquals(10.0, output, 0.1)
+
+        // 2. Output finiteness
+        val nanOutput = filter.process(Double.NaN)
+        assertTrue(nanOutput.isFinite())
+        assertEquals(0.0, nanOutput, 0.001)
+
+        // 3. Reset clears internal state
+        filter.reset()
+        assertEquals(0.0, filter.process(0.0), 0.001)
     }
 }
