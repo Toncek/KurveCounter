@@ -48,6 +48,11 @@ private var cornerState = CornerState.STRAIGHT
     // For kinematic lean calculation
     private var lastLocation: Location? = null
 
+    // GPS values for calibrator
+    private var lastGpsSpeedMs: Double = 0.0
+    private var lastGpsYawRateDegSec: Double = 0.0
+    private var lastGpsLongAccelMs2: Double = 0.0
+
     fun processImu(
         timestampMs: Long,
         accelX: Double, accelY: Double, accelZ: Double,
@@ -57,6 +62,10 @@ private var cornerState = CornerState.STRAIGHT
         val (fGx, fGy, fGz) = gyroFilter.process(gyroX, gyroY, gyroZ)
 
         if (!calibrator.isCalibrated) {
+            calibrator.processSample(
+                fAx, fAy, fAz,
+                lastGpsSpeedMs, lastGpsYawRateDegSec, lastGpsLongAccelMs2
+            )
             // Cannot reliably compute G forces or lean without calibration
             return
         }
@@ -97,6 +106,8 @@ if (speedMs * 3.6 < 1.5) {
         lastLat = location.latitude
         lastLon = location.longitude
 
+        lastGpsSpeedMs = speedMs
+
         if (lastLocation != null) {
             val dtSec = (location.time - lastLocation!!.time) / 1000.0
             if (dtSec > 0) {
@@ -106,18 +117,15 @@ if (speedMs * 3.6 < 1.5) {
                 while (normBearingChange > 180) normBearingChange -= 360
                 while (normBearingChange < -180) normBearingChange += 360
 
-                val yawRateRadSec = Math.toRadians(normBearingChange / dtSec)
+                lastGpsYawRateDegSec = (normBearingChange / dtSec).takeIf { it.isFinite() } ?: 0.0
+                val yawRateRadSec = Math.toRadians(lastGpsYawRateDegSec)
+
+                val speedChange = speedMs - (lastLocation!!.speed.toDouble())
+                lastGpsLongAccelMs2 = (speedChange / dtSec).takeIf { it.isFinite() } ?: 0.0
 
                 // Kinematic Lean Angle: phi = atan((v * w) / g)
                 val kinematicLeanRad = atan2((speedMs * yawRateRadSec).takeIf { it.isFinite() } ?: 0.0, 9.80665)
                 val kinematicLeanDeg = Math.toDegrees(kinematicLeanRad)
-
-                // Try calibrating if not calibrated
-                if (!calibrator.isCalibrated) {
-                    // Send uncalibrated raw IMU values (since we don't have them here,
-                    // this requires tightly coupling IMU and GPS.
-                    // For this architecture, calibrator is called in `processImu` if we pass the latest GPS values.)
-                }
 
                 // Complementary filter (fuse integrated gyro with kinematic lean)
                 // If calibrated, we trust kinematic lean for low frequency, gyro for high frequency
@@ -125,10 +133,6 @@ if (speedMs * 3.6 < 1.5) {
             }
         }
         lastLocation = location
-    }
-
-    fun updateCalibratorGpsData(speedMs: Double, yawRateDegSec: Double, longAccelMs2: Double, ax: Double, ay: Double, az: Double) {
-        calibrator.processSample(ax, ay, az, speedMs, yawRateDegSec, longAccelMs2)
     }
 
     private fun updateCornerStateMachine(timestampMs: Long, rollRateDeg: Double) {
