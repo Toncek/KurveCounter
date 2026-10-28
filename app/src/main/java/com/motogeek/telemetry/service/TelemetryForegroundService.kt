@@ -288,9 +288,6 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         lastLocation = location
         fusionEngine.processLocation(location)
 
-        val speedMs = location.speed.toDouble()
-        fusionEngine.updateCalibratorGpsData(speedMs, 0.0, 0.0, lastAccelX, lastAccelY, lastAccelZ)
-
         val tp = TelemetryTrackPointEntity(
             rideId = activeRideId,
             timestampMs = System.currentTimeMillis(),
