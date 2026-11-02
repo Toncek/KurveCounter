@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.background
 import com.motogeek.telemetry.data.local.MaintenanceTaskEntity
 import com.motogeek.telemetry.domain.maintenance.MaintenanceTaskStatus
 import com.motogeek.telemetry.domain.maintenance.TaskStatus
@@ -320,6 +322,13 @@ fun MaintenanceTaskCard(status: MaintenanceTaskStatus) {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(8.dp),
                 color = color
             )
+            val finalNotes = status.task.notes.takeIf { it.isNotBlank() } ?: com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog.getProcedureGuideForTask(status.task.taskName, status.task.category, null)
+            if (finalNotes.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(modifier = Modifier.fillMaxWidth().background(Color(0xFF2A2A2A), MaterialTheme.shapes.small).padding(10.dp)) {
+                    Text(text = finalNotes, color = Color.LightGray, fontSize = 12.sp, lineHeight = 16.sp)
+                }
+            }
         }
     }
 }

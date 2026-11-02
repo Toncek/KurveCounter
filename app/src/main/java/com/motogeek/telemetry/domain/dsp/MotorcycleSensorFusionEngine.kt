@@ -20,6 +20,14 @@ class MotorcycleSensorFusionEngine(
     var currentSpeedKmh = 0.0
         private set
 
+    private var lastFilteredAx = 0.0
+    private var lastFilteredAy = 0.0
+    private var lastFilteredAz = 9.80665
+
+    private var rawEstimatedLeanDeg = 0.0
+    var manualLeanOffsetDeg: Double = 0.0
+        private set
+
     var totalCorners = 0
         private set
     var leftCorners = 0
@@ -64,6 +72,10 @@ class MotorcycleSensorFusionEngine(
 
         val (fAx, fAy, fAz) = accelFilter.process(accelX, accelY, accelZ)
         val (fGx, fGy, fGz) = gyroFilter.process(gyroX, gyroY, gyroZ)
+        
+        lastFilteredAx = fAx
+        lastFilteredAy = fAy
+        lastFilteredAz = fAz
 
         calibrator.processImuSample(timestampNanos, fAx, fAy, fAz)
 
@@ -94,13 +106,24 @@ class MotorcycleSensorFusionEngine(
         val alpha = 1.0 / (1.0 + dtSec) 
         val delta = (rollRateDeg * dtSec).takeIf { it.isFinite() } ?: 0.0
         
-        var newLean = alpha * (currentLeanAngleDeg + delta) + (1 - alpha) * kinematicLeanDeg
+        var newLean = alpha * (rawEstimatedLeanDeg + delta) + (1 - alpha) * kinematicLeanDeg
         if (speedMs < 2.0) {
             newLean = newLean * 0.95
         }
-        currentLeanAngleDeg = newLean.coerceIn(-70.0, 70.0).takeIf { it.isFinite() } ?: 0.0
+        rawEstimatedLeanDeg = newLean.takeIf { it.isFinite() } ?: 0.0
+        currentLeanAngleDeg = (rawEstimatedLeanDeg - manualLeanOffsetDeg).coerceIn(-70.0, 70.0)
 
         updateCornerStateMachine(timestampNanos / 1_000_000, rollRateDeg)
+    }
+
+    fun calibrateManualZero() {
+        calibrator.calibrateManualZero(lastFilteredAx, lastFilteredAy, lastFilteredAz)
+        manualLeanOffsetDeg = rawEstimatedLeanDeg
+        currentLeanAngleDeg = 0.0
+    }
+
+    fun setManualLeanOffset(offsetDeg: Double) {
+        manualLeanOffsetDeg = offsetDeg
     }
     
     fun processGps(
@@ -267,6 +290,11 @@ class MotorcycleSensorFusionEngine(
         currentLongitudinalG = 0.0
         currentLateralG = 0.0
         currentSpeedKmh = 0.0
+        lastFilteredAx = 0.0
+        lastFilteredAy = 0.0
+        lastFilteredAz = 9.80665
+        rawEstimatedLeanDeg = 0.0
+        manualLeanOffsetDeg = 0.0
         
         totalCorners = 0
         leftCorners = 0

@@ -98,7 +98,7 @@ fun GarageSettingsScreen(viewModel: MainViewModel) {
 
         Button(
             onClick = {
-                clipboardManager.setText(AnnotatedString(viewModel.importExportManager.aiServiceManualPrompt))
+                clipboardManager.setText(AnnotatedString(viewModel.importExportManager.buildAiServiceManualPrompt(activeBike)))
             },
             modifier = Modifier.fillMaxWidth()
         ) {

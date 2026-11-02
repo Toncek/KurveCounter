@@ -27,8 +27,18 @@ class ImportExportManager(private val context: Context, private val repository: 
         prettyPrint = true
     }
 
-    val aiServiceManualPrompt: String = """
-        You are an expert motorcycle mechanic. I am providing you with the service manual for a motorcycle.
+    val aiServiceManualPrompt: String get() = buildAiServiceManualPrompt(null)
+
+    fun buildAiServiceManualPrompt(bike: com.motogeek.telemetry.data.local.MotorcycleEntity?): String {
+        val bikeContext = if (bike != null) {
+            "for a ${bike.year} ${bike.make} ${bike.model} (${bike.engineDisplacementCc}cc, ${bike.type})."
+        } else {
+            "for a motorcycle."
+        }
+        return """
+        You are an expert motorcycle mechanic. I am providing you with the service manual $bikeContext
+        Extract ALL available technical specs, fluid volumes (oil with/without filter, coolant L, fork oil ml, brake fluid), tire pressures/sizes, valve clearances, full boltTorquesNm map, and a complete maintenance schedule.
+        Ensure every task's notes field contains detailed mechanic instructions including exact drain valve/bolt counts and locations, tightening torques in Nm, and fluid capacities in L/ml. Include specific tasks for coolant (e.g. 2 drain bolts—front water pump X Nm, side cylinder Y Nm, Z L required), oil, brakes, tires, chain, valves, spark plugs.
         Extract periodic maintenance items, fluids specifications, and full bolt tightening torques into the JSON format provided. Include boltTorquesNm as a key-value map mapping bolt names to numeric torque values in Nm. Ensure oilCapacityLiters is numeric.
         Please extract the maintenance schedule and technical specifications into the following strict JSON format.
         Do NOT output any markdown blocks or extra text, only the raw JSON.
@@ -41,7 +51,19 @@ class ImportExportManager(private val context: Context, private val repository: 
             "chainSlackMm": "20-30",
             "rearAxleNutTorqueNm": 150.0,
             "oilDrainPlugTorqueNm": 43.0,
-            "frontCaliperBoltsTorqueNm": 35.0
+            "frontCaliperBoltsTorqueNm": 35.0,
+            "waterPumpDrainBoltTorqueNm": 5.0,
+            "cylinderDrainBoltTorqueNm": 9.0,
+            "oilFilterTorqueNm": 17.0,
+            "brakeBleedNippleTorqueNm": 8.0,
+            "rearCaliperBoltsTorqueNm": 27.0,
+            "frontAxleTorqueNm": 65.0,
+            "frontPinchBoltsTorqueNm": 20.0,
+            "sparkPlugTorqueNm": 13.0,
+            "coolantType": "ethylene glycol 50/50",
+            "brakeFluidVolumeMl": 300,
+            "frontTireSize": "120/70 ZR17",
+            "rearTireSize": "180/55 ZR17"
           },
           "maintenanceSchedule": [
             {
@@ -54,12 +76,12 @@ class ImportExportManager(private val context: Context, private val repository: 
               "intervalMonths": 12,
               "warningThresholdKm": 500.0,
               "warningThresholdDays": 30,
-              "oemPartNumbers": ["15410-MFJ-D01"],
-              "notes": "Use 10W-40 Fully Synthetic"
+              "notes": "Drain plug 30 Nm, filter 17 Nm, 3.4L 10W-40"
             }
           ]
         }
-    """.trimIndent()
+        """.trimIndent()
+    }
 
     private fun sanitizeJsonInput(raw: String): String {
         val noFences = raw.replace("```json", "").replace("```", "")

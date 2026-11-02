@@ -88,6 +88,9 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     private var timePausedMs = 0L
     private var pauseStartTimeMs = 0L
 
+    private var isMonitoringStandby = false
+    private var manualLeanOffsetDeg = 0.0
+
     override fun onCreate() {
         super.onCreate()
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -105,6 +108,8 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
+            ACTION_START_MONITORING -> startMonitoringStandby()
+            ACTION_STOP_MONITORING -> stopMonitoringStandby()
             ACTION_START_RIDE -> {
                 val bikeId = intent.getStringExtra(EXTRA_MOTORCYCLE_ID) ?: ""
                 startRide(bikeId)
@@ -113,14 +118,66 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
             ACTION_RESUME_RIDE -> resumeRide()
             ACTION_STOP_RIDE -> stopRide()
             ACTION_RESET_PEAKS -> resetPeaksInternal()
+            ACTION_CALIBRATE_ZERO -> calibrateZero()
+            ACTION_SYNC_PREFS -> syncPrefs()
         }
         return START_NOT_STICKY
+    }
+
+    private fun syncPrefs() {
+        val prefs = TelemetryPreferences(this)
+        _state.update { it.copy(autoStartAbove5Kmh = prefs.autoStartAbove5Kmh, startOnBoot = prefs.startOnBoot) }
+    }
+
+    private fun calibrateZero() {
+        manualLeanOffsetDeg = fusionEngine.currentLeanAngleDeg
+        TelemetryPreferences(this).manualLeanOffsetDeg = manualLeanOffsetDeg
+        resetPeaksInternal()
+        _state.update { it.copy(calibrationStatus = "MANUAL 0° LOCKED", manualLeanOffsetDeg = manualLeanOffsetDeg) }
+    }
+
+    private fun startMonitoringStandby() {
+        if (_state.value.isRiding || isMonitoringStandby) return
+        isMonitoringStandby = true
+        val prefs = TelemetryPreferences(this)
+        manualLeanOffsetDeg = prefs.manualLeanOffsetDeg
+        _state.update { it.copy(isMonitoringStandby = true, manualLeanOffsetDeg = manualLeanOffsetDeg, autoStartAbove5Kmh = prefs.autoStartAbove5Kmh, startOnBoot = prefs.startOnBoot) }
+        
+        startForegroundServiceWithNotification(isStandby = true)
+        acquireWakeLock()
+        registerSensors()
+        requestLocationUpdates()
+        startUiUpdateLoop()
+    }
+
+    private fun stopMonitoringStandby() {
+        if (_state.value.isRiding || !isMonitoringStandby) return
+        isMonitoringStandby = false
+        _state.update { it.copy(isMonitoringStandby = false) }
+
+        sensorManager.unregisterListener(this)
+        sensorThread.quitSafely()
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+
+        uiUpdateJob?.cancel()
+        if (::wakeLock.isInitialized && wakeLock.isHeld) {
+            wakeLock.release()
+        }
+
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun startRide(bikeId: String) {
         if (_state.value.isRiding) return
         motorcycleId = bikeId
         startTimeMs = System.currentTimeMillis()
+        
+        if (!isMonitoringStandby) {
+            val prefs = TelemetryPreferences(this)
+            manualLeanOffsetDeg = prefs.manualLeanOffsetDeg
+        }
+        isMonitoringStandby = false
         accumulatedDistanceKm = 0.0
         timePausedMs = 0L
         isPaused = false
@@ -184,17 +241,20 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
             )
         }
 
-        _state.update { it.copy(isRiding = true, calibrationStatus = "CALIBRATING POCKET MODE") }
+        _state.update { it.copy(isRiding = true, isMonitoringStandby = false, calibrationStatus = if (manualLeanOffsetDeg != 0.0) "MANUAL 0° LOCKED" else "CALIBRATING POCKET MODE") }
 
-        startForegroundServiceWithNotification()
-        acquireWakeLock()
-        registerSensors()
-        requestLocationUpdates()
+        startForegroundServiceWithNotification(isStandby = false)
+        
+        if (!::wakeLock.isInitialized || !wakeLock.isHeld) acquireWakeLock()
+        if (!::sensorThread.isInitialized || !sensorThread.isAlive) registerSensors()
+        if (!::locationCallback.isInitialized) requestLocationUpdates()
+        
         startPeriodicFlush()
-        startUiUpdateLoop()
+        
+        if (uiUpdateJob == null || uiUpdateJob?.isActive != true) startUiUpdateLoop()
     }
 
-    private fun startForegroundServiceWithNotification() {
+    private fun startForegroundServiceWithNotification(isStandby: Boolean = false) {
         val hasFine = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val hasCoarse = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (!hasFine && !hasCoarse) {
@@ -202,7 +262,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
             return
         }
 
-        val notification = buildNotification()
+        val notification = buildNotification(isStandby)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(this, NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         } else {
@@ -210,14 +270,14 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(isStandby: Boolean = false): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("MotoGeek Telemetry Active")
-            .setContentText("Recording live telemetry...")
+            .setContentText(if (isStandby) "Standby: Auto-start > 5 km/h" else "Recording live telemetry...")
             .setSmallIcon(R.mipmap.ic_launcher) // Adjust icon as needed
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -282,24 +342,33 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private fun processLocationUpdate(location: Location) {
-        if (lastLocation != null) {
-            accumulatedDistanceKm += lastLocation!!.distanceTo(location) / 1000.0
+        if (_state.value.isRiding) {
+            if (lastLocation != null) {
+                accumulatedDistanceKm += lastLocation!!.distanceTo(location) / 1000.0
+            }
         }
         lastLocation = location
         fusionEngine.processLocation(location)
 
-        val tp = TelemetryTrackPointEntity(
-            rideId = activeRideId,
-            timestampMs = System.currentTimeMillis(),
-            latitude = location.latitude,
-            longitude = location.longitude,
-            speedKmh = fusionEngine.currentSpeedKmh,
-            leanAngleDeg = fusionEngine.currentLeanAngleDeg,
-            longitudinalG = fusionEngine.currentLongitudinalG,
-            lateralG = fusionEngine.currentLateralG,
-            altitudeMeters = location.altitude
-        )
-        trackPointBuffer.add(tp)
+        val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else fusionEngine.currentSpeedKmh
+        if (!_state.value.isRiding && TelemetryPreferences(this).autoStartAbove5Kmh && speedKmh > 5.0) {
+            startRide(motorcycleId)
+        }
+
+        if (_state.value.isRiding) {
+            val tp = TelemetryTrackPointEntity(
+                rideId = activeRideId,
+                timestampMs = System.currentTimeMillis(),
+                latitude = location.latitude,
+                longitude = location.longitude,
+                speedKmh = fusionEngine.currentSpeedKmh,
+                leanAngleDeg = fusionEngine.currentLeanAngleDeg,
+                longitudinalG = fusionEngine.currentLongitudinalG,
+                lateralG = fusionEngine.currentLateralG,
+                altitudeMeters = location.altitude
+            )
+            trackPointBuffer.add(tp)
+        }
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -348,7 +417,9 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private fun updateState() {
-        val lean = fusionEngine.currentLeanAngleDeg
+        var lean = fusionEngine.currentLeanAngleDeg - manualLeanOffsetDeg
+        lean = lean.coerceIn(-70.0, 70.0)
+        
         if (lean > 0) maxLeanRight = max(maxLeanRight, lean)
         else maxLeanLeft = max(maxLeanLeft, abs(lean))
 
@@ -371,7 +442,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 lateralG = fusionEngine.currentLateralG,
                 leftCorners = fusionEngine.leftCorners,
                 rightCorners = fusionEngine.rightCorners,
-                calibrationStatus = if (fusionEngine.calibrator.isCalibrated) "LOCKED" else "CALIBRATING POCKET MODE",
+                calibrationStatus = if (manualLeanOffsetDeg != 0.0) "MANUAL 0° LOCKED" else if (fusionEngine.calibrator.isCalibrated) "LOCKED" else "CALIBRATING POCKET MODE",
                 distanceKm = accumulatedDistanceKm,
                 durationSeconds = durationSec,
                 isPaused = isPaused || fusionEngine.isAutoPaused
@@ -491,6 +562,10 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
 
         const val ACTION_RESET_PEAKS = "ACTION_RESET_PEAKS"
+        const val ACTION_START_MONITORING = "ACTION_START_MONITORING"
+        const val ACTION_STOP_MONITORING = "ACTION_STOP_MONITORING"
+        const val ACTION_CALIBRATE_ZERO = "ACTION_CALIBRATE_ZERO"
+        const val ACTION_SYNC_PREFS = "ACTION_SYNC_PREFS"
         const val ACTION_START_RIDE = "ACTION_START_RIDE"
         const val ACTION_PAUSE_RIDE = "ACTION_PAUSE_RIDE"
         const val ACTION_RESUME_RIDE = "ACTION_RESUME_RIDE"

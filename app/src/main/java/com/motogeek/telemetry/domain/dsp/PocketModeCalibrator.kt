@@ -23,6 +23,13 @@ class PocketModeCalibrator {
     private val GRAVITY_WINDOW_SIZE = 150
     private var totalSamplesProcessed = 0L
 
+    var lastAx = 0.0
+        private set
+    var lastAy = 0.0
+        private set
+    var lastAz = 0.0
+        private set
+
     private var accumulatedForwardAccel = Triple(0.0, 0.0, 0.0)
     private var accumulatedEvidenceFrames = 0
     private val REQUIRED_HEADING_FRAMES = 300
@@ -36,6 +43,9 @@ class PocketModeCalibrator {
 
     fun processImuSample(timestampNanos: Long, ax: Double, ay: Double, az: Double) {
         totalSamplesProcessed++
+        lastAx = ax
+        lastAy = ay
+        lastAz = az
 
         if (state == CalibrationState.WAITING) {
             accelWindow.add(Triple(ax, ay, az))
@@ -72,6 +82,16 @@ class PocketModeCalibrator {
                 }
             }
         }
+    }
+
+    fun calibrateManualZero(ax: Double = lastAx, ay: Double = lastAy, az: Double = lastAz): Boolean {
+        if (magnitude(Triple(ax, ay, az)) > 1.0) {
+            lockGravity(ax, ay, az)
+            state = CalibrationState.LOCKED
+            progress = 1.0
+            return true
+        }
+        return false
     }
 
     fun processGpsSample(timestampMs: Long, speedMs: Double, longAccelMs2: Double, yawRateDegSec: Double) {
@@ -194,6 +214,9 @@ class PocketModeCalibrator {
         gpsSpeedMs = 0.0
         gpsLongAccelMs2 = 0.0
         gpsYawRateDegSec = 0.0
+        lastAx = 0.0
+        lastAy = 0.0
+        lastAz = 0.0
     }
 
     private fun normalize(v: Triple<Double, Double, Double>): Triple<Double, Double, Double> {

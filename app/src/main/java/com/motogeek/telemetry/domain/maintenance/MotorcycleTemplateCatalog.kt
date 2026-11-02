@@ -2,6 +2,96 @@ package com.motogeek.telemetry.domain.maintenance
 
 object MotorcycleTemplateCatalog {
 
+    fun getProcedureGuideForTask(taskName: String, category: String, specs: TechnicalSpecsDto?): String {
+        return when (category) {
+            "Cooling" -> "Sú dva výpustné ventily/skrutky: jeden je vpredu na vodnej pumpe (${specs?.waterPumpDrainBoltTorqueNm ?: 5.0} Nm) a druhý zboku na valci (${specs?.cylinderDrainBoltTorqueNm ?: 9.0} Nm). Potrebujete ${specs?.coolantCapacityLiters ?: 1.5} L chladiacej kvapaliny (${specs?.coolantType?.ifBlank { "etylénglykol 50/50" } ?: "etylénglykol 50/50"}). Postup: 1. Na studenom motore uvoľnite viečko chladiča. 2. Odskrutkujte predný výpustný ventil na vodnej pumpe (5 Nm) a bočný výpustný ventil na valci (9 Nm). 3. Po vypustení nasaďte nové tesniace podložky, dotiahnite na predpísaný moment, nalejte novú kvapalinu a odvzdušnite systém."
+            "Engine" -> if (taskName.contains("Oil", ignoreCase = true)) {
+                "Výmena motorového oleja a filtra: Výpustná skrutka oleja (${specs?.oilDrainPlugTorqueNm ?: 30.0} Nm). Olejový filter (${specs?.oilFilterTorqueNm ?: 17.0} Nm). Objem oleja s filtrom: ${specs?.oilCapacityLiters ?: 3.0} L, bez filtra: ${specs?.oilCapacityNoFilterLiters ?: 2.7} L. Viskozita: ${specs?.oilViscosityAndSpec?.ifBlank { "10W-40" } ?: "10W-40"}. Postup: Vypustite starý olej, vymeňte tesniacu podložku výpustnej skrutky, dotiahnite, vymeňte filter a nalejte predpísaný objem oleja. Skontrolujte hladinu po zahriatí."
+            } else if (taskName.contains("Valve", ignoreCase = true)) {
+                "Kontrola vôle ventilov: Skontrolujte sacie (${specs?.valveClearanceIntakeMm.takeIf { !it.isNullOrBlank() } ?: "N/A"} mm) a výfukové (${specs?.valveClearanceExhaustMm.takeIf { !it.isNullOrBlank() } ?: "N/A"} mm) ventily. Postup: Demontujte veko ventilov na studenom motore, nastavte piest do hornej úvrate a zmerajte vôle lístkovými mierkami."
+            } else if (taskName.contains("Air", ignoreCase = true)) {
+                "Vzduchový filter: Skontrolujte alebo vymeňte vzduchový filter. Vyčistite airbox od nečistôt."
+            } else ""
+            "Brakes" -> "Servis bŕzd a výmena brzdovej kvapaliny: Predné strmene (${specs?.frontCaliperBoltsTorqueNm ?: 35.0} Nm), zadný strmeň (${specs?.rearCaliperBoltsTorqueNm ?: 27.0} Nm), odvzdušňovacie skrutky (${specs?.brakeBleedNippleTorqueNm ?: 8.0} Nm). Kvapalina: ${specs?.brakeFluidType ?: "DOT 4"}, objem cca ${specs?.brakeFluidVolumeMl ?: 300} ml. Postup: Odsajte starú kvapalinu z nádobky, nalejte novú a postupne odvzdušnite systém od najvzdialenejšieho strmeňa, kým nepotečie čistá kvapalina bez bublín."
+            "Tires" -> "Pneumatiky, tlaky a osi kolies: Predný tlak (${specs?.frontTirePressurePsi ?: 36.0} PSI / 2.5 Bar), zadný tlak (${specs?.rearTirePressurePsi ?: 42.0} PSI / 2.9 Bar). Matica zadnej osi (${specs?.rearAxleNutTorqueNm ?: 100.0} Nm), predná os (${specs?.frontAxleTorqueNm ?: 65.0} Nm), zaisťovacie skrutky prednej osi (${specs?.frontPinchBoltsTorqueNm ?: 20.0} Nm). Minimálna hĺbka dezénu 1.6 mm. Skontrolujte stav pneumatík a prípadné poškodenia."
+            "Drivetrain" -> "Údržba a napnutie reťaze: Prieves reťaze (${specs?.chainSlackMm ?: "25-35"} mm). Postup: Očistite reťaz vhodným čističom, namažte sprejom na reťaz a skontrolujte rovnomernosť napnutia a opotrebenie roziet."
+            "Ignition" -> "Zapaľovacie sviečky: Odporúčaný model: ${specs?.sparkPlugModel.takeIf { !it.isNullOrBlank() } ?: "N/A"}. Medzera: ${specs?.sparkPlugGapMm.takeIf { !it.isNullOrBlank() } ?: "N/A"} mm. Uťahovací moment: ${specs?.sparkPlugTorqueNm ?: 13.0} Nm. Skontrolujte stav izolátora a elektród."
+            else -> ""
+        }
+    }
+
+    fun buildStandardMaintenanceTasks(specs: TechnicalSpecsDto?): List<MaintenanceTaskDto> {
+        return listOf(
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Cooling",
+                taskName = "Coolant",
+                actionType = "Replace",
+                intervalMonths = 36,
+                notes = getProcedureGuideForTask("Coolant", "Cooling", specs)
+            ),
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Engine",
+                taskName = "Engine Oil",
+                actionType = "Replace",
+                firstBreakInAtKm = 1000.0,
+                intervalKm = 10000.0,
+                intervalMonths = 12,
+                notes = getProcedureGuideForTask("Engine Oil", "Engine", specs)
+            ),
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Brakes",
+                taskName = "Brake Fluid",
+                actionType = "Replace",
+                intervalMonths = 24,
+                notes = getProcedureGuideForTask("Brake Fluid", "Brakes", specs)
+            ),
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Tires",
+                taskName = "Tires & Axles",
+                actionType = "Inspect",
+                intervalMonths = 1,
+                notes = getProcedureGuideForTask("Tires & Axles", "Tires", specs)
+            ),
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Drivetrain",
+                taskName = "Chain & Sprockets",
+                actionType = "Clean/Lube",
+                intervalKm = 500.0,
+                notes = getProcedureGuideForTask("Chain & Sprockets", "Drivetrain", specs)
+            ),
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Engine",
+                taskName = "Valve Clearance",
+                actionType = "Inspect",
+                intervalKm = 24000.0,
+                notes = getProcedureGuideForTask("Valve Clearance", "Engine", specs)
+            ),
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Ignition",
+                taskName = "Spark Plugs",
+                actionType = "Replace",
+                intervalKm = 24000.0,
+                notes = getProcedureGuideForTask("Spark Plugs", "Ignition", specs)
+            ),
+            MaintenanceTaskDto(
+                taskId = java.util.UUID.randomUUID().toString(),
+                category = "Engine",
+                taskName = "Air Filter",
+                actionType = "Replace",
+                intervalKm = 12000.0,
+                notes = getProcedureGuideForTask("Air Filter", "Engine", specs)
+            )
+        )
+    }
+
+
     val mt09 = MotorcycleBackupDto(
         motorcycle = MotorcycleDto(
             id = "template_mt09",
@@ -23,11 +113,15 @@ object MotorcycleTemplateCatalog {
             oilDrainPlugTorqueNm = 43.0,
             frontCaliperBoltsTorqueNm = 35.0
         ),
-        maintenanceSchedule = listOf(
-            MaintenanceTaskDto(taskId = "mt09_oil", category = "Engine", taskName = "Engine Oil", actionType = "Replace", firstBreakInAtKm = 1000.0, intervalKm = 10000.0, intervalMonths = 12, notes = "10W-40"),
-            MaintenanceTaskDto(taskId = "mt09_chain", category = "Drivetrain", taskName = "Chain & Sprockets", actionType = "Clean/Lube", intervalKm = 500.0, notes = "Lube chain"),
-            MaintenanceTaskDto(taskId = "mt09_valves", category = "Engine", taskName = "Valve Clearance", actionType = "Inspect", intervalKm = 40000.0)
-        ),
+        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
+            oilCapacityLiters = 3.2,
+            frontTirePressurePsi = 36.0,
+            rearTirePressurePsi = 42.0,
+            chainSlackMm = "25-35",
+            rearAxleNutTorqueNm = 105.0,
+            oilDrainPlugTorqueNm = 43.0,
+            frontCaliperBoltsTorqueNm = 35.0
+        )),
         serviceLogs = emptyList()
     )
 
@@ -52,10 +146,15 @@ object MotorcycleTemplateCatalog {
             oilDrainPlugTorqueNm = 30.0,
             frontCaliperBoltsTorqueNm = 30.0
         ),
-        maintenanceSchedule = listOf(
-            MaintenanceTaskDto(taskId = "cb650r_oil", category = "Engine", taskName = "Engine Oil", actionType = "Replace", firstBreakInAtKm = 1000.0, intervalKm = 12000.0, intervalMonths = 12, notes = "10W-30"),
-            MaintenanceTaskDto(taskId = "cb650r_chain", category = "Drivetrain", taskName = "Chain & Sprockets", actionType = "Clean/Lube", intervalKm = 500.0)
-        ),
+        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
+            oilCapacityLiters = 2.6,
+            frontTirePressurePsi = 36.0,
+            rearTirePressurePsi = 42.0,
+            chainSlackMm = "25-35",
+            rearAxleNutTorqueNm = 98.0,
+            oilDrainPlugTorqueNm = 30.0,
+            frontCaliperBoltsTorqueNm = 30.0
+        )),
         serviceLogs = emptyList()
     )
 
@@ -80,10 +179,15 @@ object MotorcycleTemplateCatalog {
             oilDrainPlugTorqueNm = 42.0,
             frontCaliperBoltsTorqueNm = 38.0
         ),
-        maintenanceSchedule = listOf(
-            MaintenanceTaskDto(taskId = "gs_oil", category = "Engine", taskName = "Engine Oil", actionType = "Replace", firstBreakInAtKm = 1000.0, intervalKm = 10000.0, intervalMonths = 12, notes = "5W-40"),
-            MaintenanceTaskDto(taskId = "gs_shaft", category = "Drivetrain", taskName = "Shaft Drive Oil", actionType = "Replace", intervalKm = 20000.0, intervalMonths = 24)
-        ),
+        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
+            oilCapacityLiters = 4.0,
+            frontTirePressurePsi = 36.0,
+            rearTirePressurePsi = 42.0,
+            chainSlackMm = "Shaft Drive",
+            rearAxleNutTorqueNm = 60.0,
+            oilDrainPlugTorqueNm = 42.0,
+            frontCaliperBoltsTorqueNm = 38.0
+        )),
         serviceLogs = emptyList()
     )
 
@@ -108,10 +212,15 @@ object MotorcycleTemplateCatalog {
             oilDrainPlugTorqueNm = 20.0,
             frontCaliperBoltsTorqueNm = 45.0
         ),
-        maintenanceSchedule = listOf(
-            MaintenanceTaskDto(taskId = "ktm_oil", category = "Engine", taskName = "Engine Oil", actionType = "Replace", firstBreakInAtKm = 1000.0, intervalKm = 15000.0, intervalMonths = 12, notes = "10W-50"),
-            MaintenanceTaskDto(taskId = "ktm_chain", category = "Drivetrain", taskName = "Chain", actionType = "Clean/Lube", intervalKm = 500.0)
-        ),
+        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
+            oilCapacityLiters = 2.8,
+            frontTirePressurePsi = 34.0,
+            rearTirePressurePsi = 40.0,
+            chainSlackMm = "2-5 (Swingarm)",
+            rearAxleNutTorqueNm = 90.0,
+            oilDrainPlugTorqueNm = 20.0,
+            frontCaliperBoltsTorqueNm = 45.0
+        )),
         serviceLogs = emptyList()
     )
 
@@ -136,10 +245,15 @@ object MotorcycleTemplateCatalog {
             oilDrainPlugTorqueNm = 29.0,
             frontCaliperBoltsTorqueNm = 34.0
         ),
-        maintenanceSchedule = listOf(
-            MaintenanceTaskDto(taskId = "z900_oil", category = "Engine", taskName = "Engine Oil", actionType = "Replace", firstBreakInAtKm = 1000.0, intervalKm = 12000.0, intervalMonths = 12, notes = "10W-40"),
-            MaintenanceTaskDto(taskId = "z900_chain", category = "Drivetrain", taskName = "Chain", actionType = "Clean/Lube", intervalKm = 500.0)
-        ),
+        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
+            oilCapacityLiters = 3.6,
+            frontTirePressurePsi = 36.0,
+            rearTirePressurePsi = 42.0,
+            chainSlackMm = "25-35",
+            rearAxleNutTorqueNm = 108.0,
+            oilDrainPlugTorqueNm = 29.0,
+            frontCaliperBoltsTorqueNm = 34.0
+        )),
         serviceLogs = emptyList()
     )
 
@@ -164,15 +278,15 @@ object MotorcycleTemplateCatalog {
             oilDrainPlugTorqueNm = 30.0,
             frontCaliperBoltsTorqueNm = 35.0
         ),
-        maintenanceSchedule = listOf(
-            MaintenanceTaskDto(taskId = "uni_oil", category = "Engine", taskName = "Engine Oil", actionType = "Replace", firstBreakInAtKm = 1000.0, intervalKm = 10000.0, intervalMonths = 12),
-            MaintenanceTaskDto(taskId = "uni_chain", category = "Drivetrain", taskName = "Chain", actionType = "Clean/Lube", intervalKm = 500.0),
-            MaintenanceTaskDto(taskId = "uni_valves", category = "Engine", taskName = "Valve Clearance", actionType = "Inspect", intervalKm = 24000.0),
-            MaintenanceTaskDto(taskId = "uni_plugs", category = "Ignition", taskName = "Spark Plugs", actionType = "Replace", intervalKm = 24000.0),
-            MaintenanceTaskDto(taskId = "uni_air", category = "Engine", taskName = "Air Filter", actionType = "Replace", intervalKm = 12000.0),
-            MaintenanceTaskDto(taskId = "uni_brake", category = "Brakes", taskName = "Brake Fluid", actionType = "Replace", intervalMonths = 24),
-            MaintenanceTaskDto(taskId = "uni_coolant", category = "Cooling", taskName = "Coolant", actionType = "Replace", intervalMonths = 36)
-        ),
+        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
+            oilCapacityLiters = 3.0,
+            frontTirePressurePsi = 36.0,
+            rearTirePressurePsi = 42.0,
+            chainSlackMm = "25-35",
+            rearAxleNutTorqueNm = 100.0,
+            oilDrainPlugTorqueNm = 30.0,
+            frontCaliperBoltsTorqueNm = 35.0
+        )),
         serviceLogs = emptyList()
     )
 

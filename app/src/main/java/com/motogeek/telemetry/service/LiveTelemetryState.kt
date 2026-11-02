@@ -2,8 +2,10 @@ package com.motogeek.telemetry.service
 
 data class LiveTelemetryState(
     val isRiding: Boolean = false,
+    val isMonitoringStandby: Boolean = false,
     val isPaused: Boolean = false,
     val leanAngleDeg: Double = 0.0,
+    val manualLeanOffsetDeg: Double = 0.0,
     val peakLeanLeftDeg: Double = 0.0,
     val peakLeanRightDeg: Double = 0.0,
     val currentSpeedKmh: Double = 0.0,
@@ -14,5 +16,7 @@ data class LiveTelemetryState(
     val rightCorners: Int = 0,
     val calibrationStatus: String = "CALIBRATING POCKET MODE",
     val distanceKm: Double = 0.0,
-    val durationSeconds: Long = 0L
+    val durationSeconds: Long = 0L,
+    val autoStartAbove5Kmh: Boolean = true,
+    val startOnBoot: Boolean = false
 )

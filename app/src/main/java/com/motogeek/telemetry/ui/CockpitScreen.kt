@@ -9,6 +9,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,7 +29,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
 import com.motogeek.telemetry.service.LiveTelemetryState
+import com.motogeek.telemetry.service.TelemetryForegroundService
+import com.motogeek.telemetry.service.TelemetryPreferences
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -166,6 +171,19 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                         Text("START RIDE")
                     }
                     Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val intent = Intent(context, TelemetryForegroundService::class.java).apply {
+                                action = TelemetryForegroundService.ACTION_CALIBRATE_ZERO
+                            }
+                            context.startService(intent)
+                        },
+                        modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
+                    ) {
+                        Text("CALIBRATE 0° (SET ZERO)")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     ElevatedFilterChip(
                         selected = false,
                         onClick = { viewModel.startDemoMode() },
@@ -182,6 +200,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -232,6 +251,33 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                         labelColor = MaterialTheme.colorScheme.tertiary
                     )
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    FilterChip(
+                        selected = telemetryState.autoStartAbove5Kmh,
+                        onClick = {
+                            val prefs = TelemetryPreferences(context)
+                            prefs.autoStartAbove5Kmh = !prefs.autoStartAbove5Kmh
+                            val intent = Intent(context, TelemetryForegroundService::class.java).apply {
+                                action = TelemetryForegroundService.ACTION_SYNC_PREFS
+                            }
+                            context.startService(intent)
+                        },
+                        label = { Text("Auto-Start > 5 km/h") }
+                    )
+                    FilterChip(
+                        selected = telemetryState.startOnBoot,
+                        onClick = {
+                            val prefs = TelemetryPreferences(context)
+                            prefs.startOnBoot = !prefs.startOnBoot
+                            val intent = Intent(context, TelemetryForegroundService::class.java).apply {
+                                action = TelemetryForegroundService.ACTION_SYNC_PREFS
+                            }
+                            context.startService(intent)
+                        },
+                        label = { Text("Run on Phone Boot") }
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
@@ -320,6 +366,19 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                     modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp)
                 ) {
                     Text("START RIDE")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val intent = Intent(context, TelemetryForegroundService::class.java).apply {
+                            action = TelemetryForegroundService.ACTION_CALIBRATE_ZERO
+                        }
+                        context.startService(intent)
+                    },
+                    modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
+                ) {
+                    Text("CALIBRATE 0° (SET ZERO)")
                 }
             }
             Spacer(modifier = Modifier.height(80.dp)) // padding for bottom nav

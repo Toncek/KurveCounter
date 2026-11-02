@@ -9,6 +9,9 @@ import com.motogeek.telemetry.domain.maintenance.TaskStatus
 import com.motogeek.telemetry.domain.toSafeDouble
 import com.motogeek.telemetry.domain.dsp.BiquadButterworthFilter
 import com.motogeek.telemetry.domain.toSafeInt
+import com.motogeek.telemetry.domain.dsp.PocketModeCalibrator
+import com.motogeek.telemetry.domain.dsp.CalibrationState
+import com.motogeek.telemetry.domain.dsp.MotorcycleSensorFusionEngine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -181,5 +184,43 @@ class DomainLogicTest {
         // 3. Reset clears internal state
         filter.reset()
         assertEquals(0.0, filter.process(0.0), 0.001)
+    }
+
+    @Test
+    fun testPocketModeCalibrator_calibrateManualZero() {
+        val calibrator = PocketModeCalibrator()
+        
+        // Ensure state is waiting
+        assertEquals(CalibrationState.WAITING, calibrator.state)
+
+        // Process an IMU sample with some tilt
+        calibrator.processImuSample(0L, 2.0, 3.0, 9.0)
+
+        // Trigger manual zero
+        val locked = calibrator.calibrateManualZero()
+
+        assertTrue(locked)
+        assertEquals(CalibrationState.LOCKED, calibrator.state)
+        assertEquals(1.0, calibrator.progress, 0.001)
+    }
+
+    @Test
+    fun testMotorcycleSensorFusionEngine_calibrateManualZero() {
+        val engine = MotorcycleSensorFusionEngine { }
+        
+        engine.setManualLeanOffset(5.0)
+        assertEquals(5.0, engine.manualLeanOffsetDeg, 0.001)
+        
+        // Feed in some samples to get raw lean
+        for (i in 0..100) {
+            engine.processImu(i * 10000000L, 2.0, 0.0, 9.8, 0.5, 0.0, 0.0)
+            engine.processGps(i * 10L, 20.0, true, 0.0, true, 0.0, 0.0)
+        }
+
+        // Calibrate manual zero
+        engine.calibrateManualZero()
+
+        // Test offset is updated and lean angle is reset to 0
+        assertEquals(0.0, engine.currentLeanAngleDeg, 0.001)
     }
 }

@@ -382,6 +382,37 @@ private fun ScheduledIntervalsTab(
             .padding(16.dp)
     ) {
         // Filter Row + Add Task Action
+        Button(
+            onClick = {
+                val dto = if (activeBike.technicalSpecsJson.isNotBlank() && activeBike.technicalSpecsJson != "{}") {
+                    kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto>(activeBike.technicalSpecsJson)
+                } else null
+                val newTasks = com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(dto)
+                newTasks.forEach { taskDto ->
+                    onAddTask(
+                        com.motogeek.telemetry.data.local.MaintenanceTaskEntity(
+                            taskId = taskDto.taskId,
+                            motorcycleId = activeBike.id,
+                            category = taskDto.category,
+                            taskName = taskDto.taskName,
+                            actionType = taskDto.actionType,
+                            firstBreakInAtKm = taskDto.firstBreakInAtKm,
+                            intervalKm = taskDto.intervalKm,
+                            intervalMonths = taskDto.intervalMonths,
+                            warningThresholdKm = taskDto.warningThresholdKm,
+                            warningThresholdDays = taskDto.warningThresholdDays,
+                            notes = taskDto.notes,
+                            oemPartNumbersJson = "[]"
+                        )
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+        ) {
+            Text("+ Štandardné úkony (Chladiaca, Olej, Brzdy, Pneu)")
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -548,6 +579,13 @@ private fun ScheduledTaskCard(
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Complete Task", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            val finalNotes = status.task.notes.takeIf { it.isNotBlank() } ?: com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog.getProcedureGuideForTask(status.task.taskName, status.task.category, null)
+            if (finalNotes.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(modifier = Modifier.fillMaxWidth().background(Color(0xFF1E1E1E), RoundedCornerShape(8.dp)).padding(10.dp)) {
+                    Text(text = finalNotes, color = Color.LightGray, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
         }

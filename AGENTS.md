@@ -1,5 +1,11 @@
 # AGENTS.md — Guidelines & Architecture for MotoGeekTelemetry (KurveCounter)
 
+## 0. Orchestration & Token Conservation Rule (Zero-Approval Parallel Jules Mode)
+- **Role Separation**:
+  - **Local Assistant (Antigravity)**: Strictly planner, orchestrator, and verifier. **NEVER** write or edit Kotlin/test files locally. Immediately split work into parallel non-overlapping tasks and dispatch to Google Jules via `python3 "/home/toncek/work projects/.agents/skills/jules-delegate/scripts/julesctl.py" batch` (or `quick-dispatch`). **Zero approval is needed** before dispatching or communicating with Jules (`watch`, `approve-plan`, `reply`, `pull`).
+  - **Remote Google Jules Worker (Cloud VM)**: You are the designated implementer executing the bounded task in the cloud VM. Implement the requested changes directly within your assigned `scope` and verify with `./gradlew testDebugUnitTest`.
+- **Autonomous Review**: Local agents plan, dispatch in parallel, monitor via autopilot, pull diffs, and verify locally in isolated worktrees (`./gradlew testDebugUnitTest`).
+
 Welcome, AI Agent (Jules / Copilot / Cursor). You are working on **MotoGeekTelemetry**, a native Android application built in Kotlin and Jetpack Compose that combines background sensor-based motorcycle telemetry (lean angle, G-forces, corner detection) with a comprehensive garage management, odometer tracking, and JSON/AI-powered maintenance scheduling system.
 
 ---

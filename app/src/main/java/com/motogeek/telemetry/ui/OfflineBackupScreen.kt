@@ -201,7 +201,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Feed your motorcycle's PDF service manual or workshop book into ChatGPT, Claude, or Gemini using our Master Mechanic prompt. Copy the resulting JSON and paste it into KurveCounter to auto-populate all service schedules and bolt torques!",
+                        text = "Feed your motorcycle's PDF service manual or workshop book into ChatGPT, Claude, or Gemini using our Master Mechanic prompt" + (activeBike?.let { " tailored for ${it.year} ${it.make} ${it.model}" } ?: "") + ". Copy the resulting JSON and paste it into KurveCounter to auto-populate all service schedules and bolt torques!",
                         color = Color.LightGray,
                         fontSize = 12.sp,
                         lineHeight = 17.sp

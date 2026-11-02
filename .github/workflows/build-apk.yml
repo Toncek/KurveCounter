@@ -1,6 +1,11 @@
 name: Build APK
 
 on:
+  push:
+    branches:
+      - main
+      - master
+      - Master
   pull_request:
     branches:
       - main

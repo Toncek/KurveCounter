@@ -27,6 +27,7 @@ import com.motogeek.telemetry.service.TelemetryForegroundService
 import com.motogeek.telemetry.ui.*
 import com.motogeek.telemetry.ui.theme.MotoGeekTelemetryTheme
 import com.motogeek.telemetry.ui.theme.CrimsonHeaderRed
+import com.motogeek.telemetry.service.TelemetryPreferences
 import com.motogeek.telemetry.ui.components.MotoGeekDrawerSheet
 import kotlinx.coroutines.launch
 
@@ -37,13 +38,17 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        // Handle permission responses if needed
+        val granted = permissions.values.all { it }
+        if (granted) {
+            checkAndStartMonitoring()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         requestRequiredPermissions()
+        checkAndStartMonitoring()
 
         setContent {
             MotoGeekTelemetryTheme {
@@ -191,6 +196,20 @@ class MainActivity : ComponentActivity() {
 
         if (notGranted.isNotEmpty()) {
             requestPermissionsLauncher.launch(notGranted.toTypedArray())
+        }
+    }
+
+    private fun checkAndStartMonitoring() {
+        val prefs = TelemetryPreferences(this)
+        if (prefs.autoStartAbove5Kmh) {
+            val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (hasFine || hasCoarse) {
+                val intent = Intent(this, TelemetryForegroundService::class.java).apply {
+                    action = TelemetryForegroundService.ACTION_START_MONITORING
+                }
+                ContextCompat.startForegroundService(this, intent)
+            }
         }
     }
 
