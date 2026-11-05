@@ -46,6 +46,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository: MotoGeekRepository
     val evaluator = MaintenanceEvaluator()
     val importExportManager: ImportExportManager
+    val googleAuthManager = com.motogeek.telemetry.domain.backup.GoogleAuthManager(application)
+    val googleDriveBackupManager: com.motogeek.telemetry.domain.backup.GoogleDriveBackupManager
 
     private var lastLoggedServiceId: String? = null
 
@@ -60,6 +62,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val db = MotoGeekDatabase.getDatabase(application)
         repository = MotoGeekRepository(db.motoGeekDao())
         importExportManager = ImportExportManager(application, repository)
+        googleDriveBackupManager = com.motogeek.telemetry.domain.backup.GoogleDriveBackupManager(application, importExportManager)
 
         activeMotorcycle = repository.getActiveMotorcycleFlow().stateIn(
             scope = viewModelScope,

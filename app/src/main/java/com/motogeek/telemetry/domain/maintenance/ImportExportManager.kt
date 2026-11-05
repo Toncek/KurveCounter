@@ -270,73 +270,77 @@ class ImportExportManager(private val context: Context, private val repository: 
         return if (res.isSuccess) Result.success(Unit) else Result.failure(res.exceptionOrNull()!!)
     }
 
-    suspend fun exportGarageBackup(uri: Uri): Result<Unit> {
-        return try {
-            val motorcycles = repository.getAllMotorcycles().first()
-            val backupMotorcycles = motorcycles.map { bike ->
-                val tasks = repository.getMaintenanceTasksForMotorcycle(bike.id)
-                val logs = repository.getServiceLogsForMotorcycle(bike.id)
+    suspend fun generateBackupJsonString(): String {
+        val motorcycles = repository.getAllMotorcycles().first()
+        val backupMotorcycles = motorcycles.map { bike ->
+            val tasks = repository.getMaintenanceTasksForMotorcycle(bike.id)
+            val logs = repository.getServiceLogsForMotorcycle(bike.id)
 
-                val mDto = MotorcycleDto(
-                    id = bike.id,
-                    make = bike.make,
-                    model = bike.model,
-                    year = bike.year,
-                    engineDisplacementCc = bike.engineDisplacementCc,
-                    baseOdometerKm = bike.baseOdometerKm,
-                    accumulatedTrackedKm = bike.accumulatedTrackedKm,
-                    manualAdjustmentOffsetKm = bike.manualAdjustmentOffsetKm,
-                    isActive = bike.isActive
-                )
+            val mDto = MotorcycleDto(
+                id = bike.id,
+                make = bike.make,
+                model = bike.model,
+                year = bike.year,
+                engineDisplacementCc = bike.engineDisplacementCc,
+                baseOdometerKm = bike.baseOdometerKm,
+                accumulatedTrackedKm = bike.accumulatedTrackedKm,
+                manualAdjustmentOffsetKm = bike.manualAdjustmentOffsetKm,
+                isActive = bike.isActive
+            )
 
-                val tDto = if (bike.technicalSpecsJson.isNotBlank() && bike.technicalSpecsJson != "{}") {
-                    json.decodeFromString<TechnicalSpecsDto>(bike.technicalSpecsJson)
-                } else null
+            val tDto = if (bike.technicalSpecsJson.isNotBlank() && bike.technicalSpecsJson != "{}") {
+                json.decodeFromString<TechnicalSpecsDto>(bike.technicalSpecsJson)
+            } else null
 
-                val taskDtos = tasks.map { t ->
-                    MaintenanceTaskDto(
-                        taskId = t.taskId,
-                        category = t.category,
-                        taskName = t.taskName,
-                        actionType = t.actionType,
-                        firstBreakInAtKm = t.firstBreakInAtKm,
-                        intervalKm = t.intervalKm,
-                        intervalMonths = t.intervalMonths,
-                        warningThresholdKm = t.warningThresholdKm,
-                        warningThresholdDays = t.warningThresholdDays,
-                        oemPartNumbers = if (t.oemPartNumbersJson.isNotBlank() && t.oemPartNumbersJson != "[]") {
-                             json.decodeFromString(t.oemPartNumbersJson)
-                        } else emptyList(),
-                        notes = t.notes
-                    )
-                }
-
-                val logDtos = logs.map { l ->
-                    ServiceLogDto(
-                        logId = l.logId,
-                        taskId = l.taskId,
-                        performedAtIsoDate = l.performedAtIsoDate,
-                        odometerAtServiceKm = l.odometerAtServiceKm,
-                        costEur = l.costEur,
-                        performedBy = l.performedBy,
-                        notes = l.notes
-                    )
-                }
-
-                MotorcycleBackupDto(
-                    motorcycle = mDto,
-                    technicalSpecs = tDto,
-                    maintenanceSchedule = taskDtos,
-                    serviceLogs = logDtos
+            val taskDtos = tasks.map { t ->
+                MaintenanceTaskDto(
+                    taskId = t.taskId,
+                    category = t.category,
+                    taskName = t.taskName,
+                    actionType = t.actionType,
+                    firstBreakInAtKm = t.firstBreakInAtKm,
+                    intervalKm = t.intervalKm,
+                    intervalMonths = t.intervalMonths,
+                    warningThresholdKm = t.warningThresholdKm,
+                    warningThresholdDays = t.warningThresholdDays,
+                    oemPartNumbers = if (t.oemPartNumbersJson.isNotBlank() && t.oemPartNumbersJson != "[]") {
+                         json.decodeFromString(t.oemPartNumbersJson)
+                    } else emptyList(),
+                    notes = t.notes
                 )
             }
 
-            val payload = GarageBackupPayload(
-                exportDateIso = java.time.Instant.now().toString(),
-                motorcycles = backupMotorcycles
-            )
+            val logDtos = logs.map { l ->
+                ServiceLogDto(
+                    logId = l.logId,
+                    taskId = l.taskId,
+                    performedAtIsoDate = l.performedAtIsoDate,
+                    odometerAtServiceKm = l.odometerAtServiceKm,
+                    costEur = l.costEur,
+                    performedBy = l.performedBy,
+                    notes = l.notes
+                )
+            }
 
-            val jsonString = json.encodeToString(payload)
+            MotorcycleBackupDto(
+                motorcycle = mDto,
+                technicalSpecs = tDto,
+                maintenanceSchedule = taskDtos,
+                serviceLogs = logDtos
+            )
+        }
+
+        val payload = GarageBackupPayload(
+            exportDateIso = java.time.Instant.now().toString(),
+            motorcycles = backupMotorcycles
+        )
+
+        return json.encodeToString(payload)
+    }
+
+    suspend fun exportGarageBackup(uri: Uri): Result<Unit> {
+        return try {
+            val jsonString = generateBackupJsonString()
             context.contentResolver.openOutputStream(uri)?.use { os ->
                 OutputStreamWriter(os).use { writer ->
                     writer.write(jsonString)

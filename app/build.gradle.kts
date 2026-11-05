@@ -94,6 +94,7 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
         }
     }
 }
@@ -122,9 +123,20 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.androidx.work.runtime.ktx)
 
+    implementation(libs.play.services.auth)
+    implementation(libs.google.api.client.android)
+    implementation("com.google.api-client:google-api-client:1.33.0")
+    implementation("com.google.api-client:google-api-client-gson:1.33.0")
+    implementation("com.google.http-client:google-http-client-gson:1.39.2")
+    implementation("com.google.http-client:google-http-client-android:1.39.2")
+    implementation(libs.google.api.services.drive)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    implementation("com.google.http-client:google-http-client-gson:1.39.2")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    testImplementation("androidx.test:core:1.5.0")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
