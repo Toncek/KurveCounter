@@ -19,6 +19,14 @@ class GoogleAuthManager(private val context: Context) {
 
     private val signInClient: GoogleSignInClient = GoogleSignIn.getClient(context, signInOptions)
 
+    init {
+        try {
+            signInClient.silentSignIn()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun getSignInIntent(): Intent = signInClient.signInIntent
 
     fun getSignedInAccount(): GoogleSignInAccount? = GoogleSignIn.getLastSignedInAccount(context)
@@ -26,6 +34,7 @@ class GoogleAuthManager(private val context: Context) {
     suspend fun signOut() {
         try {
             signInClient.signOut().await()
+            signInClient.revokeAccess().await()
         } catch (e: Exception) {
             e.printStackTrace()
         }

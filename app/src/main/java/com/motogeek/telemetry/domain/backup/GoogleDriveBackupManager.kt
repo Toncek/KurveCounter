@@ -43,7 +43,12 @@ class GoogleDriveBackupManager(
 
     suspend fun backupToDrive(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val drive = getDriveService() ?: return@withContext Result.failure(Exception("Not signed in"))
+            val account = GoogleSignIn.getLastSignedInAccount(context)
+            if (account == null) {
+                return@withContext Result.failure(Exception("Not signed in to Google Drive"))
+            }
+
+            val drive = getDriveService() ?: return@withContext Result.failure(Exception("Failed to initialize Google Drive service"))
 
             val jsonString = importExportManager.generateBackupJsonString()
             val content = ByteArrayContent.fromString("application/json", jsonString)
@@ -53,7 +58,6 @@ class GoogleDriveBackupManager(
                 parents = listOf("appDataFolder")
             }
 
-            // check if file exists
             val files = drive.files().list()
                 .setSpaces("appDataFolder")
                 .setQ("name='kurvecounter_backup.json'")
@@ -68,15 +72,23 @@ class GoogleDriveBackupManager(
 
             lastBackupTimestamp = Instant.now().toEpochMilli()
             Result.success(Unit)
+        } catch (e: java.net.UnknownHostException) {
+            Log.e("DriveBackup", "Backup failed - Network Error", e)
+            Result.failure(Exception("Network error: Please check your internet connection."))
         } catch (e: Exception) {
             Log.e("DriveBackup", "Backup failed", e)
-            Result.failure(e)
+            Result.failure(Exception("Backup failed: ${e.message}"))
         }
     }
 
     suspend fun restoreFromDrive(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val drive = getDriveService() ?: return@withContext Result.failure(Exception("Not signed in"))
+            val account = GoogleSignIn.getLastSignedInAccount(context)
+            if (account == null) {
+                return@withContext Result.failure(Exception("Not signed in to Google Drive"))
+            }
+
+            val drive = getDriveService() ?: return@withContext Result.failure(Exception("Failed to initialize Google Drive service"))
 
             val files = drive.files().list()
                 .setSpaces("appDataFolder")
@@ -84,7 +96,7 @@ class GoogleDriveBackupManager(
                 .execute()
 
             if (files.files.isEmpty()) {
-                return@withContext Result.failure(Exception("No backup found on Drive"))
+                return@withContext Result.failure(Exception("No backup found on Google Drive AppData folder"))
             }
 
             val fileId = files.files[0].id
@@ -97,11 +109,14 @@ class GoogleDriveBackupManager(
             if (result.isSuccess) {
                 Result.success(Unit)
             } else {
-                Result.failure(result.exceptionOrNull() ?: Exception("Restore failed"))
+                Result.failure(result.exceptionOrNull() ?: Exception("Failed to import restored data"))
             }
+        } catch (e: java.net.UnknownHostException) {
+            Log.e("DriveBackup", "Restore failed - Network Error", e)
+            Result.failure(Exception("Network error: Please check your internet connection."))
         } catch (e: Exception) {
             Log.e("DriveBackup", "Restore failed", e)
-            Result.failure(e)
+            Result.failure(Exception("Restore failed: ${e.message}"))
         }
     }
 }

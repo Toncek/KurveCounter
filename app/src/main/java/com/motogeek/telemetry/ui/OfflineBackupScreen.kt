@@ -39,11 +39,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
     var showPasteDialog by remember { mutableStateOf(false) }
     var pasteJsonText by remember { mutableStateOf("") }
 
-    var googleAccount by remember { mutableStateOf(viewModel.googleAuthManager.getSignedInAccount()) }
-    var isBackingUp by remember { mutableStateOf(false) }
-    var isRestoring by remember { mutableStateOf(false) }
-    var showRestoreConfirm by remember { mutableStateOf(false) }
-    var lastCloudBackupTime by remember { mutableStateOf(viewModel.googleDriveBackupManager.lastBackupTimestamp) }
+
 
     // SAF Import Launcher (Supports Local Storage, Google Drive, Nextcloud, Dropbox, etc.)
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -74,17 +70,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
         }
     }
 
-    val googleSignInLauncher = rememberLauncherForActivityResult(StartActivityForResult()) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
-                googleAccount = account
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
+
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -125,101 +111,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = DarkCharcoalBg),
-                    border = BorderStroke(1.dp, TitaniumBorder)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CloudSync, contentDescription = null, tint = ApexAmber, modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Google Drive Cloud Backup", color = ApexAmber, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        if (googleAccount == null) {
-                            Text("Sign in to securely backup your garage telemetry and service history to Google Drive.", color = Color.LightGray, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { googleSignInLauncher.launch(viewModel.googleAuthManager.getSignInIntent()) },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = ApexAmber)
-                            ) {
-                                Text("Sign in with Google", color = DarkCharcoalBg, fontWeight = FontWeight.Bold)
-                            }
-                        } else {
-                            Text("Signed in as: ${googleAccount?.email ?: googleAccount?.displayName}", color = Color.LightGray, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            if (lastCloudBackupTime > 0) {
-                                val timeStr = java.time.Instant.ofEpochMilli(lastCloudBackupTime)
-                                    .atZone(java.time.ZoneId.systemDefault())
-                                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-                                Text("Last cloud backup: $timeStr", color = ApexAmber, fontSize = 12.sp)
-                            } else {
-                                Text("Last cloud backup: Never", color = Color.LightGray, fontSize = 12.sp)
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Button(
-                                    onClick = {
-                                        isBackingUp = true
-                                        scope.launch {
-                                            val res = viewModel.googleDriveBackupManager.backupToDrive()
-                                            isBackingUp = false
-                                            if (res.isSuccess) {
-                                                lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
-                                                snackbarHostState.showSnackbar("Cloud backup successful")
-                                            } else {
-                                                snackbarHostState.showSnackbar("Cloud backup failed: ${res.exceptionOrNull()?.message}")
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(containerColor = RacingRed),
-                                    enabled = !isBackingUp && !isRestoring
-                                ) {
-                                    if (isBackingUp) {
-                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                                    } else {
-                                        Text("Backup to Drive", color = Color.White, fontSize = 12.sp)
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                OutlinedButton(
-                                    onClick = { showRestoreConfirm = true },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ApexAmber),
-                                    border = BorderStroke(1.dp, ApexAmber),
-                                    enabled = !isBackingUp && !isRestoring
-                                ) {
-                                    if (isRestoring) {
-                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = ApexAmber, strokeWidth = 2.dp)
-                                    } else {
-                                        Text("Restore from Drive", fontSize = 12.sp)
-                                    }
-                                }
-                            }
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            OutlinedButton(
-                                onClick = {
-                                    scope.launch {
-                                        viewModel.googleAuthManager.signOut()
-                                        googleAccount = null
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                border = BorderStroke(1.dp, TitaniumBorder),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
-                            ) {
-                                Text("Sign out")
-                            }
-                        }
-                    }
-                }
+                GoogleDriveCloudSyncCard(viewModel = viewModel, snackbarHostState = snackbarHostState)
                 
             // Section 1: Backup & Restore Actions Card
             Card(
@@ -393,37 +285,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
     }
 
 
-    if (showRestoreConfirm) {
-        AlertDialog(
-            onDismissRequest = { showRestoreConfirm = false },
-            title = { Text("Restore from Cloud?", color = Color.White) },
-            text = { Text("This will add the cloud garage backup to your current data. Duplicates may be overwritten based on ID.", color = Color.LightGray) },
-            containerColor = DarkCharcoalBg,
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showRestoreConfirm = false
-                        isRestoring = true
-                        scope.launch {
-                            val res = viewModel.googleDriveBackupManager.restoreFromDrive()
-                            isRestoring = false
-                            if (res.isSuccess) {
-                                snackbarHostState.showSnackbar("Restore from Drive successful")
-                            } else {
-                                snackbarHostState.showSnackbar("Restore failed: ${res.exceptionOrNull()?.message}")
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = RacingRed)
-                ) {
-                    Text("Confirm Restore", color = Color.White)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel", color = ApexAmber) }
-            }
-        )
-    }
+
 
     if (showPasteDialog) {
         AlertDialog(
@@ -512,5 +374,163 @@ private fun TemplateTile(title: String, subtitle: String, onApply: () -> Unit) {
                 Text("Apply", color = RacingAmberPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+
+@Composable
+fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: SnackbarHostState?) {
+    val scope = rememberCoroutineScope()
+    var googleAccount by remember { mutableStateOf(viewModel.googleAuthManager.getSignedInAccount()) }
+    var isBackingUp by remember { mutableStateOf(false) }
+    var isRestoring by remember { mutableStateOf(false) }
+    var showRestoreConfirm by remember { mutableStateOf(false) }
+    var lastCloudBackupTime by remember { mutableStateOf(viewModel.googleDriveBackupManager.lastBackupTimestamp) }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
+                googleAccount = account
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = DarkCharcoalBg),
+        border = BorderStroke(1.dp, TitaniumBorder)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CloudSync, contentDescription = null, tint = ApexAmber, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Google Drive Cloud Backup", color = ApexAmber, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            if (googleAccount == null) {
+                Text("Sign in to securely backup your garage telemetry and service history to Google Drive.", color = Color.LightGray, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { googleSignInLauncher.launch(viewModel.googleAuthManager.getSignInIntent()) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = ApexAmber)
+                ) {
+                    Icon(
+                        Icons.Default.AccountCircle,
+                        contentDescription = "Google Icon",
+                        modifier = Modifier.size(20.dp),
+                        tint = DarkCharcoalBg
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Sign in with Google", color = DarkCharcoalBg, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Text("Signed in as: ${googleAccount?.email ?: googleAccount?.displayName}", color = Color.LightGray, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                if (lastCloudBackupTime > 0) {
+                    val timeStr = java.time.Instant.ofEpochMilli(lastCloudBackupTime)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                    Text("Last cloud backup: $timeStr", color = ApexAmber, fontSize = 12.sp)
+                } else {
+                    Text("Last cloud backup: Never", color = Color.LightGray, fontSize = 12.sp)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Button(
+                        onClick = {
+                            isBackingUp = true
+                            scope.launch {
+                                val res = viewModel.googleDriveBackupManager.backupToDrive()
+                                isBackingUp = false
+                                if (res.isSuccess) {
+                                    lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
+                                    snackbarHostState?.showSnackbar("Cloud backup successful")
+                                } else {
+                                    snackbarHostState?.showSnackbar("Cloud backup failed: ${res.exceptionOrNull()?.message}")
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = RacingRed),
+                        enabled = !isBackingUp && !isRestoring
+                    ) {
+                        if (isBackingUp) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("Backup to Drive", color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = { showRestoreConfirm = true },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ApexAmber),
+                        border = BorderStroke(1.dp, ApexAmber),
+                        enabled = !isBackingUp && !isRestoring
+                    ) {
+                        if (isRestoring) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = ApexAmber, strokeWidth = 2.dp)
+                        } else {
+                            Text("Restore from Drive", fontSize = 12.sp)
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            viewModel.googleAuthManager.signOut()
+                            googleAccount = null
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, TitaniumBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
+                ) {
+                    Text("Sign out")
+                }
+            }
+        }
+    }
+
+    if (showRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirm = false },
+            title = { Text("Restore from Cloud?", color = Color.White) },
+            text = { Text("This will add the cloud garage backup to your current data. Duplicates may be overwritten based on ID.", color = Color.LightGray) },
+            containerColor = DarkCharcoalBg,
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRestoreConfirm = false
+                        isRestoring = true
+                        scope.launch {
+                            val res = viewModel.googleDriveBackupManager.restoreFromDrive()
+                            isRestoring = false
+                            if (res.isSuccess) {
+                                snackbarHostState?.showSnackbar("Restore from Drive successful")
+                            } else {
+                                snackbarHostState?.showSnackbar("Restore failed: ${res.exceptionOrNull()?.message}")
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RacingRed)
+                ) {
+                    Text("Confirm Restore", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel", color = ApexAmber) }
+            }
+        )
     }
 }

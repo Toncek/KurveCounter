@@ -35,6 +35,7 @@ import java.util.UUID
 fun GarageSettingsScreen(viewModel: MainViewModel) {
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)
 
     var showPasteDialog by remember { mutableStateOf(false) }
@@ -64,12 +65,17 @@ fun GarageSettingsScreen(viewModel: MainViewModel) {
 
     val scrollState = rememberScrollState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(scrollState)) {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(scrollState)) {
         Text(
             text = "Garage & Settings",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
+        GoogleDriveCloudSyncCard(viewModel = viewModel, snackbarHostState = snackbarHostState)
+
         Spacer(modifier = Modifier.height(32.dp))
 
         activeBike?.let { bike ->
@@ -206,6 +212,7 @@ fun GarageSettingsScreen(viewModel: MainViewModel) {
                 )
             }
         }
+    }
     }
 }
 
