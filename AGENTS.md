@@ -1,10 +1,68 @@
-# AGENTS.md — MotoGeekTelemetry (`KurveCounter`)
+# AGENTS.md — Guidelines & Architecture for MotoGeekTelemetry (KurveCounter)
 
-## 0. Low-Credit & Jules-First Mandate (Codex / Claude / Antigravity)
-- **Local Agent (Codex / Claude Code / Antigravity)**: Act strictly as low-credit planner/verifier.
-  1. **Delegate 100% of Kotlin/Compose/test work to Google Jules** (free cloud VM) in 1 command: `python3 "/home/toncek/work projects/.agents/skills/jules-delegate/scripts/julesctl.py" batch` (or `quick-dispatch`). **Zero user approval needed** for dispatch, `watch`, `approve-plan`, `reply`, or `pull`.
-  2. **Save Credits**: Never spawn local `Task`/`Explore` subagents. Never read whole files (`rg -n` + `sed -n` ≤ 60 lines max). Chain shell commands with `&&` in 1 tool call. Keep chat replies ≤ 5 terse bullets (no code dumps).
-- **Remote Jules Worker (or Explicit Direct Mode)**: Implement within assigned `scope` and verify with `./gradlew testDebugUnitTest`.
+## Shared operating rules: Antigravity + Codex
+
+`AGENTS.md` is the shared source of truth. Use Antigravity (`agy`) with the signed-in Google AI Pro account and Codex (`codex`) with the signed-in ChatGPT Plus account. Actively use both subscriptions for suitable work; neither is a permanent emergency-only fallback. Use official subscription authentication, never API keys, gateways, unofficial OAuth bridges, or paid API billing for normal work.
+
+### Task ownership and provider allocation
+- Select one owner per task. Antigravity/Gemini is preferred for broad analysis, specifications, architecture, feature decomposition, cross-cutting design, and complex reasoning. For Unity, prefer it for gameplay/system design, Burst/Jobs architecture, visual direction, and large feature planning.
+- Codex is preferred for focused implementation, C#/Kotlin edits, refactoring, Editor/build tooling, tests, compile/debug loops, review, and verification. Codex can own complete features when appropriate. These are defaults, not strict restrictions or quality rankings.
+- Use the other agent for independent review only when the task warrants spending the second plan's allowance. Do not start extra agents by default.
+
+### Model preferences and quota
+- User preferences, only when available in the current account selector: Antigravity Gemini 4 Argon (High) for complex work; Gemini 3.8 Flash for routine tasks. Codex GPT-6.1 Sol at medium/high reasoning for serious implementation/review; GPT-6 Luna for routine high-volume work; GPT-6 Astra sparingly for unusually hard work only if visible and available in Plus.
+- Model names and access change. Check the live selector and account availability; never hard-code model IDs into scripts or assume access.
+- Before long Antigravity jobs, check `/usage` (or `/quota` if supported) for both the five-hour refresh window and separate weekly limit. Keep AI Credit Overages at **Never**, and CLI `useG1Credits` false, unless the user explicitly authorizes spending.
+- For Codex, check `/status` and the ChatGPT Codex usage dashboard for the model-dependent allowance and reset times; weekly limits may apply. Do not assume the same five-hour schedule as Antigravity.
+- When a plan is low, give the next suitable new task to the other agent. Do not treat provider quota percentages as equivalent. Never restart a task on the other provider while the first may have modified files.
+
+### Handoffs, safety, and verification
+- Check `git status` before work and preserve unrelated user changes. Before switching agents, update `TASK_HANDOFF.md` or a structured task note with objective, source documents, decisions, modified files, current diff/state, tests/results, and remaining work.
+- Never let two agents modify the same working tree concurrently. Independent parallel work requires separate Git worktrees and deliberate review/merge.
+- Keep normal sandbox and approval protections. Do not default to unrestricted/yolo/bypass permissions. Commit only when the user requests or authorizes it; stage only relevant files.
+- Preserve project architecture, domain constraints, documentation hierarchy, build/test commands, and deprecated-design warnings. Run appropriate project checks and report exactly what ran and what did not. Do not run app builds for documentation-only changes without a project-specific reason.
+- Read targeted sections and use `rg` for discovery. Keep responses concise; do not dump code or diffs unless requested.
+
+Welcome, Codex or Antigravity. You are working on **MotoGeekTelemetry**, a native Android application built in Kotlin and Jetpack Compose that combines background sensor-based motorcycle telemetry (lean angle, G-forces, corner detection) with a comprehensive garage management, odometer tracking, and JSON/AI-powered maintenance scheduling system.
+
+---
+
+## 1. Core Objectives & Product Vision
+1. **Background Telemetry & Sensor Fusion**: Real-time 100Hz sensor sampling (Accelerometer, Gyroscope, Barometer) fused with GPS data to calculate exact lean angles, corner scoring, and ride statistics without crashing on Android 14/15.
+2. **Odometer & Maintenance Management**: Accurate distance tracking with manual adjustments, paired with automated tracking of service intervals (oil, chain, valves, brakes) categorized as `OK`, `DUE_SOON`, or `OVERDUE`.
+3. **AI Service Manual Import**: Seamless parsing of JSON schedules and technical specs generated by LLMs from service manuals (including tightening torques in Nm and fluid capacities).
+4. **Crash-Free Stability**: Zero tolerance for runtime crashes, unhandled exceptions in custom `Canvas` drawing, or Foreground Service start violations on API 34/35.
+
+---
+
+## 2. Tech Stack & Architectural Standards
+- **Language**: Kotlin 1.9+ (strict null safety, coroutines, `StateFlow`).
+- **UI Framework**: Jetpack Compose (Material3, custom Canvas gauges, Material Icons Extended).
+- **Architecture**: MVVM (ViewModel + Repository pattern + Room DAO).
+- **Local Database**: Room Database (with KSP compiler, `@Transaction` support, and robust migration strategy).
+- **Background Processing**: Android 14/15 compliant `LifecycleService` (`FOREGROUND_SERVICE_TYPE_LOCATION`) with WorkManager for daily maintenance checks (`CoroutineWorker`).
+- **Serialization**: `kotlinx.serialization.json` configured with `ignoreUnknownKeys = true`, `isLenient = true`, and `coerceInputValues = true` for resilient JSON parsing.
+
+---
+
+## 3. Engineering Guidelines & Best Practices
+
+### A. Android 14 & 15 Compliance (API 34/35)
+- **Foreground Services**: Never start `TelemetryForegroundService` without checking runtime permissions (`ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION`) and declaring appropriate foreground service types in the manifest.
+- **Wakelocks & Sensors**: Always register sensor listeners (`TYPE_ACCELEROMETER`, `TYPE_GYROSCOPE`, `TYPE_PRESSURE`) on a dedicated `HandlerThread` and use `PARTIAL_WAKE_LOCK` safely during active ride sessions.
+
+### B. Mathematical & Canvas Safety (`NaN` / `Infinity` Prevention)
+- Telemetry calculations (`MotorcycleSensorFusionEngine`, `BiquadButterworthFilter`) must guard all divisions, square roots, and trigonometric functions against `NaN` or `Infinity`:
+  ```kotlin
+  val safeVal = result.takeIf { it.isFinite() } ?: 0.0
+  ```
+
+
+## Verification and data integrity
+- Run `./gradlew testDebugUnitTest` for relevant unit tests.
+- Odometer updates must be monotonic except for explicit manual adjustments; preserve service interval categories (`OK`, `DUE_SOON`, `OVERDUE`) and robust service-manual JSON parsing.
+
+## Additional project rules from updated main
 
 ## 1. Tech Stack & Architecture
 - **Stack**: Kotlin 1.9+ (`StateFlow`, Coroutines), Jetpack Compose (Material3, custom `Canvas` gauges), MVVM + Room Database (KSP, `@Transaction`, migrations), Android 14/15 `LifecycleService` (`FOREGROUND_SERVICE_TYPE_LOCATION`) + WorkManager (`CoroutineWorker`), `kotlinx.serialization.json` (`ignoreUnknownKeys = true`, `isLenient = true`, `coerceInputValues = true`).
