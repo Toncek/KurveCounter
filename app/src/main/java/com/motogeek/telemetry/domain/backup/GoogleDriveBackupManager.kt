@@ -11,6 +11,8 @@ import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.motogeek.telemetry.domain.maintenance.ImportExportManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.time.Instant
@@ -22,13 +24,22 @@ class GoogleDriveBackupManager(
     private val prefs = context.getSharedPreferences("google_drive_prefs", Context.MODE_PRIVATE)
 
     var lastBackupTimestamp: Long
-        get() = prefs.getLong("last_backup_timestamp", 0L)
-        set(value) = prefs.edit().putLong("last_backup_timestamp", value).apply()
+        get() = accountPreferenceKey()?.let { prefs.getLong(it, 0L) } ?: 0L
+        private set(value) {
+            accountPreferenceKey()?.let { prefs.edit().putLong(it, value).apply() }
+        }
+
+    private fun accountPreferenceKey(): String? =
+        GoogleSignIn.getLastSignedInAccount(context)?.let { it.id ?: it.email }
+            ?.let { "last_backup_timestamp_$it" }
 
     private fun getDriveService(): Drive? {
         val account = GoogleSignIn.getLastSignedInAccount(context) ?: return null
+        check(GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_APPDATA))) {
+            "Reconnect your Google account and allow Drive backup access."
+        }
         val credential = GoogleAccountCredential.usingOAuth2(
-            context, listOf(DriveScopes.DRIVE_APPDATA, DriveScopes.DRIVE_FILE)
+            context, listOf(DriveScopes.DRIVE_APPDATA)
         )
         credential.selectedAccount = account.account
 
@@ -60,7 +71,10 @@ class GoogleDriveBackupManager(
 
             val files = drive.files().list()
                 .setSpaces("appDataFolder")
-                .setQ("name='kurvecounter_backup.json'")
+                .setQ("name='kurvecounter_backup.json' and trashed = false")
+                .setOrderBy("modifiedTime desc")
+                .setPageSize(1)
+                .setFields("files(id)")
                 .execute()
 
             if (files.files.isNotEmpty()) {
@@ -72,12 +86,14 @@ class GoogleDriveBackupManager(
 
             lastBackupTimestamp = Instant.now().toEpochMilli()
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: java.net.UnknownHostException) {
             Log.e("DriveBackup", "Backup failed - Network Error", e)
             Result.failure(Exception("Network error: Please check your internet connection."))
         } catch (e: Exception) {
             Log.e("DriveBackup", "Backup failed", e)
-            Result.failure(Exception("Backup failed: ${e.message}"))
+            Result.failure(e)
         }
     }
 
@@ -92,7 +108,10 @@ class GoogleDriveBackupManager(
 
             val files = drive.files().list()
                 .setSpaces("appDataFolder")
-                .setQ("name='kurvecounter_backup.json'")
+                .setQ("name='kurvecounter_backup.json' and trashed = false")
+                .setOrderBy("modifiedTime desc")
+                .setPageSize(1)
+                .setFields("files(id)")
                 .execute()
 
             if (files.files.isEmpty()) {
@@ -100,23 +119,26 @@ class GoogleDriveBackupManager(
             }
 
             val fileId = files.files[0].id
-            val outputStream = ByteArrayOutputStream()
-            drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
-
-            val jsonString = outputStream.toString("UTF-8")
+            val jsonString = ByteArrayOutputStream().use { outputStream ->
+                drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
+                outputStream.toString("UTF-8")
+            }
             val result = importExportManager.importGarageBackupFromString(jsonString)
 
+            (result.exceptionOrNull() as? CancellationException)?.let { throw it }
             if (result.isSuccess) {
                 Result.success(Unit)
             } else {
                 Result.failure(result.exceptionOrNull() ?: Exception("Failed to import restored data"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: java.net.UnknownHostException) {
             Log.e("DriveBackup", "Restore failed - Network Error", e)
             Result.failure(Exception("Network error: Please check your internet connection."))
         } catch (e: Exception) {
             Log.e("DriveBackup", "Restore failed", e)
-            Result.failure(Exception("Restore failed: ${e.message}"))
+            Result.failure(e)
         }
     }
 }

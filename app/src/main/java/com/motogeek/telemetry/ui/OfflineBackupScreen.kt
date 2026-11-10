@@ -381,23 +381,85 @@ private fun TemplateTile(title: String, subtitle: String, onApply: () -> Unit) {
 @Composable
 fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: SnackbarHostState?) {
     val scope = rememberCoroutineScope()
-    var googleAccount by remember { mutableStateOf(viewModel.googleAuthManager.getSignedInAccount()) }
+    val googleAccount by viewModel.googleAuthManager.account.collectAsState()
+    var isSigningIn by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var isSigningOut by remember { mutableStateOf(false) }
+    var accountError by remember { mutableStateOf<String?>(null) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.googleAuthManager.refreshAccount()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        viewModel.googleAuthManager.refreshAccount()
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var isBackingUp by remember { mutableStateOf(false) }
     var isRestoring by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var lastCloudBackupTime by remember { mutableStateOf(viewModel.googleDriveBackupManager.lastBackupTimestamp) }
 
-    val googleSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val task = com.google.android.gms.auth.api.signin.GoogleSignIn.getSignedInAccountFromIntent(result.data)
+    LaunchedEffect(googleAccount?.id, googleAccount?.email) {
+        lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
+    }
+
+    val authorizationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        viewModel.googleAuthManager.refreshAccount()
+        accountError = if (result.resultCode == android.app.Activity.RESULT_OK) {
+            "Drive access granted. Tap Backup or Restore again."
+        } else {
+            "Drive access was cancelled. Allow access to back up or restore."
+        }
+    }
+
+    fun handleCloudFailure(error: Throwable?) {
+        accountError = error?.message ?: "Google Drive operation failed. Please try again."
+        val recoveryIntent = (error as? com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException)?.intent
+        if (recoveryIntent != null) {
             try {
-                val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
-                googleAccount = account
+                authorizationLauncher.launch(recoveryIntent)
             } catch (e: Exception) {
-                e.printStackTrace()
+                accountError = "Unable to open Google authorization. Check Google Play services and try again."
             }
         }
     }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        isSigningIn = false
+        try {
+            // Google may return an API error in a cancelled Activity result too.
+            if (result.data == null && result.resultCode != android.app.Activity.RESULT_OK) {
+                accountError = "Google sign-in cancelled."
+            } else {
+                viewModel.googleAuthManager.handleSignInResult(result.data)
+                accountError = null
+                lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
+            }
+        } catch (e: com.google.android.gms.common.api.ApiException) {
+            accountError = when (e.statusCode) {
+                12501 -> "Google sign-in cancelled."
+                7 -> "Check your internet connection and try signing in again."
+                10, 12500 -> "Google sign-in configuration error. Check the Android OAuth client package and signing SHA-1 in Google Cloud."
+                else -> "Google sign-in failed (${e.statusCode}). Please try again."
+            }
+        } catch (e: Exception) {
+            accountError = e.message ?: "Google sign-in failed. Please try again."
+        }
+    }
+
+    val launchSignIn: () -> Unit = {
+        accountError = null
+        isSigningIn = true
+        try {
+            googleSignInLauncher.launch(viewModel.googleAuthManager.getSignInIntent())
+        } catch (e: Exception) {
+            isSigningIn = false
+            accountError = "Unable to open Google sign-in. Check Google Play services and try again."
+        }
+    }
+    val isBusy = isBackingUp || isRestoring || isSigningIn || isSigningOut
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -412,11 +474,16 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
             }
             Spacer(modifier = Modifier.height(8.dp))
             
-            if (googleAccount == null) {
-                Text("Sign in to securely backup your garage telemetry and service history to Google Drive.", color = Color.LightGray, fontSize = 14.sp)
+            accountError?.let {
+                Text(it, color = ApexAmber, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            if (googleAccount == null || !viewModel.googleAuthManager.hasDriveAccess(googleAccount)) {
+                Text("Sign in or create a Google account to back up your garage and service history. Allow Drive access when asked.", color = Color.LightGray, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = { googleSignInLauncher.launch(viewModel.googleAuthManager.getSignInIntent()) },
+                    onClick = launchSignIn,
+                    enabled = !isBusy,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = ApexAmber)
                 ) {
@@ -427,7 +494,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         tint = DarkCharcoalBg
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sign in with Google", color = DarkCharcoalBg, fontWeight = FontWeight.Bold)
+                    Text(if (isSigningIn) "Connecting…" else if (googleAccount != null) "Allow Google Drive access" else "Sign in / Sign up with Google", color = DarkCharcoalBg, fontWeight = FontWeight.Bold)
                 }
             } else {
                 Text("Signed in as: ${googleAccount?.email ?: googleAccount?.displayName}", color = Color.LightGray, fontSize = 14.sp)
@@ -448,19 +515,23 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         onClick = {
                             isBackingUp = true
                             scope.launch {
-                                val res = viewModel.googleDriveBackupManager.backupToDrive()
-                                isBackingUp = false
+                                accountError = null
+                                val res = try {
+                                    viewModel.googleDriveBackupManager.backupToDrive()
+                                } finally {
+                                    isBackingUp = false
+                                }
                                 if (res.isSuccess) {
                                     lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
                                     snackbarHostState?.showSnackbar("Cloud backup successful")
                                 } else {
-                                    snackbarHostState?.showSnackbar("Cloud backup failed: ${res.exceptionOrNull()?.message}")
+                                    handleCloudFailure(res.exceptionOrNull())
                                 }
                             }
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = RacingRed),
-                        enabled = !isBackingUp && !isRestoring
+                        enabled = !isBusy
                     ) {
                         if (isBackingUp) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -474,7 +545,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = ApexAmber),
                         border = BorderStroke(1.dp, ApexAmber),
-                        enabled = !isBackingUp && !isRestoring
+                        enabled = !isBusy
                     ) {
                         if (isRestoring) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = ApexAmber, strokeWidth = 2.dp)
@@ -484,19 +555,32 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                     }
                 }
                 
+            }
+            if (googleAccount != null) {
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedButton(
                     onClick = {
+                        isSigningOut = true
                         scope.launch {
-                            viewModel.googleAuthManager.signOut()
-                            googleAccount = null
+                            accountError = null
+                            try {
+                                viewModel.googleAuthManager.signOut()
+                                lastCloudBackupTime = 0L
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                accountError = "Sign-out failed. Please try again."
+                            } finally {
+                                isSigningOut = false
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     border = BorderStroke(1.dp, TitaniumBorder),
+                    enabled = !isBusy,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
                 ) {
-                    Text("Sign out")
+                    Text(if (isSigningOut) "Signing out…" else "Sign out")
                 }
             }
         }
@@ -514,15 +598,20 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         showRestoreConfirm = false
                         isRestoring = true
                         scope.launch {
-                            val res = viewModel.googleDriveBackupManager.restoreFromDrive()
-                            isRestoring = false
+                            accountError = null
+                            val res = try {
+                                viewModel.googleDriveBackupManager.restoreFromDrive()
+                            } finally {
+                                isRestoring = false
+                            }
                             if (res.isSuccess) {
                                 snackbarHostState?.showSnackbar("Restore from Drive successful")
                             } else {
-                                snackbarHostState?.showSnackbar("Restore failed: ${res.exceptionOrNull()?.message}")
+                                handleCloudFailure(res.exceptionOrNull())
                             }
                         }
                     },
+                    enabled = !isBusy && viewModel.googleAuthManager.hasDriveAccess(googleAccount),
                     colors = ButtonDefaults.buttonColors(containerColor = RacingRed)
                 ) {
                     Text("Confirm Restore", color = Color.White)
