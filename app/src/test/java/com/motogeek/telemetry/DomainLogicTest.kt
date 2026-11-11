@@ -223,4 +223,126 @@ class DomainLogicTest {
         // Test offset is updated and lean angle is reset to 0
         assertEquals(0.0, engine.currentLeanAngleDeg, 0.001)
     }
+
+    @Test
+    fun testCornerDetectionWithNanosecondAndWallClockTimestamps() {
+        val detectedCorners = mutableListOf<com.motogeek.telemetry.data.local.CornerEventEntity>()
+        val engine = MotorcycleSensorFusionEngine { corner ->
+            detectedCorners.add(corner)
+        }
+
+        // First lock stationary gravity calibration (160 samples at 100Hz = 10_000_000 ns step)
+        var tsNanos = 1_000_000_000L
+        var wallMs = 1_700_000_000_000L
+        for (i in 0..160) {
+            engine.processImu(tsNanos, 0.0, 0.0, 9.80665, 0.0, 0.0, 0.0, wallClockMs = wallMs)
+            tsNanos += 10_000_000L
+            wallMs += 10L
+        }
+        assertTrue(engine.calibrator.isCalibrated)
+
+        // Set cruising GPS speed (22 m/s = 79.2 km/h)
+        engine.processGps(wallMs, 22.0, true, 0.0, true, 48.0, 17.0)
+
+        // Sustain a right-hand corner (roll rate gyroY + yaw rate gyroZ = -0.35 rad/s) for 2.0 seconds (200 frames = 2000ms > 1200ms)
+        for (i in 0..200) {
+            val rollRateRad = if (i < 35) 1.0 else 0.0
+            engine.processImu(tsNanos, 0.0, 0.0, 9.80665, 0.0, rollRateRad, -0.35, wallClockMs = wallMs)
+            tsNanos += 10_000_000L
+            wallMs += 10L
+        }
+
+        // Straighten out (< 8 deg lean) so corner completes and emits
+        for (i in 0..150) {
+            val rollRateRad = if (i < 35) -1.0 else 0.0
+            engine.processImu(tsNanos, 0.0, 0.0, 9.80665, 0.0, rollRateRad, 0.0, wallClockMs = wallMs)
+            tsNanos += 10_000_000L
+            wallMs += 10L
+        }
+
+        assertEquals(1, engine.totalCorners)
+        assertEquals(1, detectedCorners.size)
+        assertTrue(detectedCorners[0].apexLeanDeg >= 12.0)
+    }
+
+    @Test
+    fun testMaintenanceEvaluatorFlexibleDateAndNewBikeTimeTasks() {
+        val evaluator = MaintenanceEvaluator()
+        val now = LocalDate.of(2026, 3, 15)
+
+        // Bike with dd/MM/yyyy startDateIso (default in MotorcycleEntity) and no service logs yet
+        val newBike = MotorcycleEntity(
+            id = "bike_new",
+            make = "Yamaha",
+            model = "MT-09",
+            year = 2026,
+            engineDisplacementCc = 890,
+            baseOdometerKm = 100.0,
+            accumulatedTrackedKm = 0.0,
+            manualAdjustmentOffsetKm = 0.0,
+            technicalSpecsJson = "{}",
+            startDateIso = "01/03/2026",
+            isActive = true
+        )
+
+        val brakeFluidTask = MaintenanceTaskEntity(
+            taskId = "STD_BRAKE_FLUID",
+            motorcycleId = "bike_new",
+            category = "Brakes",
+            taskName = "Brake Fluid Flush",
+            actionType = "Replace",
+            firstBreakInAtKm = null,
+            intervalKm = null,
+            intervalMonths = 24,
+            warningThresholdKm = null,
+            warningThresholdDays = 30,
+            oemPartNumbersJson = "[]",
+            notes = ""
+        )
+
+        val evaluated = evaluator.evaluate(newBike, listOf(brakeFluidTask), emptyList(), now)
+        assertEquals(1, evaluated.size)
+        // Should be OK (~716 days remaining), NOT immediately OVERDUE!
+        assertEquals(TaskStatus.OK, evaluated[0].status)
+        assertTrue((evaluated[0].remainingDays ?: 0L) > 600L)
+
+        // Also test malformed date resilience in ServiceLogEntity
+        val malformedLog = ServiceLogEntity(
+            motorcycleId = "bike_new",
+            taskId = "STD_BRAKE_FLUID",
+            performedAtIsoDate = "not-a-valid-date",
+            odometerAtServiceKm = 100.0
+        )
+        val evaluatedWithBadDate = evaluator.evaluate(newBike, listOf(brakeFluidTask), listOf(malformedLog), now)
+        assertEquals(TaskStatus.OK, evaluatedWithBadDate[0].status)
+    }
+
+    @Test
+    fun testConsolidatedTorqueMapAndDeterministicTaskIds() {
+        val specs = MotorcycleTemplateCatalog.mt09.technicalSpecs!!
+        val map = specs.toConsolidatedTorqueMap()
+        assertTrue(map.containsKey("Rear Axle Nut"))
+        assertTrue(map.containsKey("Front Axle"))
+        assertTrue(map.containsKey("Front Axle Pinch Bolts"))
+        assertTrue(map.containsKey("Oil Drain Plug"))
+        assertTrue(map.containsKey("Oil Filter"))
+        assertTrue(map.containsKey("Front Brake Caliper Bolts"))
+        assertTrue(map.containsKey("Rear Brake Caliper Bolts"))
+        assertTrue(map.containsKey("Brake Bleed Nipple"))
+        assertTrue(map.containsKey("Spark Plugs"))
+        assertTrue(map.containsKey("Water Pump Drain Bolt"))
+        assertTrue(map.containsKey("Cylinder Coolant Drain Bolt"))
+        assertEquals(11, map.size)
+
+        val tasks1 = MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(specs, "en")
+        val tasks2 = MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(specs, "en")
+        assertEquals(tasks1.map { it.taskId }, tasks2.map { it.taskId })
+        assertTrue(tasks1.any { it.taskId == "STD_ENGINE_OIL" })
+        assertTrue(tasks1.all { !it.notes.contains("Výpustná") }) // English procedure guides
+
+        val tasksSk = MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(specs, "sk")
+        assertEquals(tasks1.map { it.taskId }, tasksSk.map { it.taskId })
+        assertTrue(tasksSk.any { it.taskName.contains("Motorový olej") })
+        assertTrue(tasksSk.any { it.notes.contains("Výpustná skrutka") }) // Slovak procedure guides
+    }
 }

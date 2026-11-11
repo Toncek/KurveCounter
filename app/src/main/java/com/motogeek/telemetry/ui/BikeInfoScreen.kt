@@ -51,10 +51,13 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
 
     var showNewBikeDialog by remember { mutableStateOf(false) }
     var showAddTorqueDialog by remember { mutableStateOf(false) }
+    var showEditSpecsDialog by remember { mutableStateOf(false) }
+    var showDeleteBikeConfirm by remember { mutableStateOf(false) }
+    var useBarUnits by remember { mutableStateOf(false) }
     var torqueSearchQuery by remember { mutableStateOf("") }
 
     // Parse technical specs & bolt torques
-    val json = remember { Json { ignoreUnknownKeys = true; isLenient = true } }
+    val json = remember { Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true } }
     val specs = remember(activeBike?.technicalSpecsJson) {
         try {
             if (!activeBike?.technicalSpecsJson.isNullOrBlank() && activeBike?.technicalSpecsJson != "{}") {
@@ -65,13 +68,9 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
         }
     }
 
-    // Consolidated torque map
+    // Consolidated torque map (all 11 named fields + torquesNm + boltTorquesNm)
     val allTorques = remember(specs) {
-        val map = mutableMapOf<String, Double>()
-        specs.rearAxleNutTorqueNm?.let { map["Rear Axle Nut"] = it }
-        specs.oilDrainPlugTorqueNm?.let { map["Oil Drain Plug"] = it }
-        specs.boltTorquesNm?.forEach { (k, v) -> map[k] = v }
-        map
+        specs.toConsolidatedTorqueMap()
     }
 
     Scaffold(
@@ -359,10 +358,23 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                             fontFamily = FontFamily.Monospace,
                             letterSpacing = 1.sp
                         )
-                        TextButton(onClick = { showAddTorqueDialog = true }) {
-                            Text("+ QUICK ADD TORQUE", color = RacingAmberPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row {
+                            TextButton(onClick = { useBarUnits = !useBarUnits }) {
+                                Text(if (useBarUnits) "UNIT: BAR" else "UNIT: PSI", color = TelemetryIceCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = { showEditSpecsDialog = true }) {
+                                Text("EDIT SPECS", color = ApexEmeraldGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = { showAddTorqueDialog = true }) {
+                                Text("+ TORQUE", color = RacingAmberPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
+
+                    val frontPsi = specs.frontTirePressurePsi ?: 36.0
+                    val rearPsi = specs.rearTirePressurePsi ?: 42.0
+                    val frontPressureStr = if (useBarUnits) String.format("%.2f BAR", frontPsi / 14.5038) else "${frontPsi.toInt()} PSI"
+                    val rearPressureStr = if (useBarUnits) String.format("%.2f BAR", rearPsi / 14.5038) else "${rearPsi.toInt()} PSI"
 
                     // Key Fluid & Tire Pressure Chips
                     Row(
@@ -370,9 +382,21 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         SpecPill("Oil Cap", "${specs.oilCapacityLiters ?: 3.2} L", TelemetryIceCyan, Modifier.weight(1f))
-                        SpecPill("Front Tire", "${specs.frontTirePressurePsi ?: 36} PSI", ApexEmeraldGreen, Modifier.weight(1f))
-                        SpecPill("Rear Tire", "${specs.rearTirePressurePsi ?: 42} PSI", ApexEmeraldGreen, Modifier.weight(1f))
+                        SpecPill("Front Tire", frontPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
+                        SpecPill("Rear Tire", rearPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
                         SpecPill("Chain Slack", specs.chainSlackMm ?: "25-35 mm", WarningGold, Modifier.weight(1f))
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SpecPill("Oil Grade", specs.oilViscosityAndSpec.ifBlank { "10W-40" }.take(10), TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill("Coolant", "${specs.coolantCapacityLiters ?: 1.8} L", TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill("Brake Fluid", specs.brakeFluidType.ifBlank { "DOT 4" }, WarningGold, Modifier.weight(1f))
+                        SpecPill("Spark Plug", specs.sparkPlugModel.ifBlank { "OEM" }.take(10), RacingAmberPrimary, Modifier.weight(1f))
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -407,6 +431,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         )
                     } else {
                         filteredTorques.forEach { (boltName, torqueNm) ->
+                            val isCustomBolt = specs.boltTorquesNm?.containsKey(boltName) == true
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -418,15 +443,36 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                                     text = boltName,
                                     color = Color.White,
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Text(
-                                    text = "${torqueNm.toInt()} Nm",
-                                    color = RacingAmberPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "${torqueNm.toInt()} Nm",
+                                        color = RacingAmberPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    if (isCustomBolt && activeBike != null) {
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    val updatedTorques = (specs.boltTorquesNm ?: emptyMap()).toMutableMap().apply {
+                                                        remove(boltName)
+                                                    }
+                                                    val updatedSpecs = specs.copy(boltTorquesNm = updatedTorques)
+                                                    val updatedBike = activeBike!!.copy(technicalSpecsJson = json.encodeToString(updatedSpecs))
+                                                    viewModel.repository.updateMotorcycle(updatedBike)
+                                                    snackbarHostState.showSnackbar("Removed custom torque: $boltName")
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = "Delete torque", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                }
                             }
                             HorizontalDivider(color = TitaniumBorder.copy(alpha = 0.4f), thickness = 0.5.dp)
                         }
@@ -434,8 +480,68 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                 }
             }
 
+            if (allBikes.size > 1 && activeBike != null) {
+                OutlinedButton(
+                    onClick = { showDeleteBikeConfirm = true },
+                    border = BorderStroke(1.dp, RedlineCrimson),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = RedlineCrimson, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Delete Motorcycle (${activeBike?.displayName})", color = RedlineCrimson, fontWeight = FontWeight.Bold)
+                }
+            }
+
             Spacer(modifier = Modifier.height(30.dp))
         }
+    }
+
+    if (showDeleteBikeConfirm && activeBike != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteBikeConfirm = false },
+            containerColor = TftSurfaceDark,
+            title = { Text("Delete ${activeBike?.displayName}?", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "This will permanently delete ${activeBike?.displayName} and its associated logs. Your other motorcycles will remain untouched.",
+                    color = Color.LightGray,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val idToDelete = activeBike!!.id
+                        showDeleteBikeConfirm = false
+                        viewModel.deleteMotorcycle(idToDelete)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RedlineCrimson)
+                ) {
+                    Text("Delete Motorcycle", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteBikeConfirm = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    if (showEditSpecsDialog && activeBike != null) {
+        EditTechnicalSpecsDialog(
+            initialSpecs = specs,
+            onDismiss = { showEditSpecsDialog = false },
+            onSave = { updatedSpecs ->
+                scope.launch {
+                    val updatedBike = activeBike!!.copy(technicalSpecsJson = json.encodeToString(updatedSpecs))
+                    viewModel.repository.updateMotorcycle(updatedBike)
+                    showEditSpecsDialog = false
+                    snackbarHostState.showSnackbar("Technical & fluid specifications updated!")
+                }
+            }
+        )
     }
 
     if (showNewBikeDialog) {
@@ -485,6 +591,193 @@ private fun SpecPill(label: String, value: String, color: Color, modifier: Modif
             Text(value, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         }
     }
+}
+
+@Composable
+private fun EditTechnicalSpecsDialog(
+    initialSpecs: TechnicalSpecsDto,
+    onDismiss: () -> Unit,
+    onSave: (TechnicalSpecsDto) -> Unit
+) {
+    var oilCap by remember { mutableStateOf(initialSpecs.oilCapacityLiters?.toString() ?: "3.2") }
+    var oilVisc by remember { mutableStateOf(initialSpecs.oilViscosityAndSpec.ifBlank { "10W-40" }) }
+    var coolantCap by remember { mutableStateOf(initialSpecs.coolantCapacityLiters?.toString() ?: "1.8") }
+    var brakeFluid by remember { mutableStateOf(initialSpecs.brakeFluidType.ifBlank { "DOT 4" }) }
+    var frontPsi by remember { mutableStateOf(initialSpecs.frontTirePressurePsi?.toString() ?: "36.0") }
+    var rearPsi by remember { mutableStateOf(initialSpecs.rearTirePressurePsi?.toString() ?: "42.0") }
+    var chainSlack by remember { mutableStateOf(initialSpecs.chainSlackMm ?: "25-35") }
+    var sparkPlug by remember { mutableStateOf(initialSpecs.sparkPlugModel) }
+    var valveIntake by remember { mutableStateOf(initialSpecs.valveClearanceIntakeMm) }
+    var valveExhaust by remember { mutableStateOf(initialSpecs.valveClearanceExhaustMm) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TftSurfaceDark,
+        title = { Text("Edit Fluid & Workshop Specs", color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = oilCap,
+                        onValueChange = { oilCap = it },
+                        label = { Text("Oil w/ Filter (L)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = oilVisc,
+                        onValueChange = { oilVisc = it },
+                        label = { Text("Oil Viscosity") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = coolantCap,
+                        onValueChange = { coolantCap = it },
+                        label = { Text("Coolant (L)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = brakeFluid,
+                        onValueChange = { brakeFluid = it },
+                        label = { Text("Brake Fluid") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = frontPsi,
+                        onValueChange = { frontPsi = it },
+                        label = { Text("Front Tire (PSI)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = rearPsi,
+                        onValueChange = { rearPsi = it },
+                        label = { Text("Rear Tire (PSI)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = chainSlack,
+                        onValueChange = { chainSlack = it },
+                        label = { Text("Chain Slack (mm)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = sparkPlug,
+                        onValueChange = { sparkPlug = it },
+                        label = { Text("Spark Plug Model") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = valveIntake,
+                        onValueChange = { valveIntake = it },
+                        label = { Text("Intake Valve (mm)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = valveExhaust,
+                        onValueChange = { valveExhaust = it },
+                        label = { Text("Exhaust Valve (mm)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        initialSpecs.copy(
+                            oilCapacityLiters = oilCap.toSafeDouble(3.2),
+                            oilViscosityAndSpec = oilVisc.trim(),
+                            coolantCapacityLiters = coolantCap.toSafeDouble(1.8),
+                            brakeFluidType = brakeFluid.trim(),
+                            frontTirePressurePsi = frontPsi.toSafeDouble(36.0),
+                            rearTirePressurePsi = rearPsi.toSafeDouble(42.0),
+                            chainSlackMm = chainSlack.trim(),
+                            sparkPlugModel = sparkPlug.trim(),
+                            valveClearanceIntakeMm = valveIntake.trim(),
+                            valveClearanceExhaustMm = valveExhaust.trim()
+                        )
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
+            ) {
+                Text("Save Specs", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+        }
+    )
 }
 
 @Composable

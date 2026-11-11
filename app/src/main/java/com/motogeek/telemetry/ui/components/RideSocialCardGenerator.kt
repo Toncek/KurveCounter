@@ -28,7 +28,8 @@ object RideSocialCardGenerator {
     suspend fun generateAndSaveCard(
         context: Context,
         ride: RideSessionEntity,
-        trackPoints: List<TelemetryTrackPointEntity>
+        trackPoints: List<TelemetryTrackPointEntity>,
+        bikeDisplayName: String? = null
     ): File = withContext(Dispatchers.IO) {
         val width = 1080
         val height = 1350
@@ -45,7 +46,8 @@ object RideSocialCardGenerator {
 
         // Header
         textPaint.textSize = 64f
-        val makeModelStr = "KurveCounter: ${ride.motorcycleId.uppercase(Locale.getDefault())}"
+        val bikeHeader = (bikeDisplayName?.takeIf { it.isNotBlank() } ?: ride.motorcycleId).uppercase(Locale.getDefault())
+        val makeModelStr = "KurveCounter: $bikeHeader"
         canvas.drawText(makeModelStr, 80f, 120f, textPaint)
 
         textPaint.textSize = 36f

@@ -99,6 +99,14 @@ android {
     }
 }
 
+tasks.withType<JavaCompile>().configureEach {
+    val javacFile = file("${System.getProperty("java.home")}/bin/javac")
+    if (javacFile.exists() && javacFile.canonicalPath != javacFile.absolutePath) {
+        options.isFork = true
+        options.forkOptions.executable = javacFile.canonicalPath
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

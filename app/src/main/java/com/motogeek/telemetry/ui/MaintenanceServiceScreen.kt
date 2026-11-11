@@ -50,15 +50,33 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
     }
 
     var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabs = listOf("CHECKLIST & RECENT", "SCHEDULED INTERVALS", "SERVICE HISTORY")
+    val appLang = LocalAppLang.current
+    val tabs = listOf(
+        tr("CHECKLIST & RECENT", "KONTROLA A POSLEDNÝ"),
+        tr("SCHEDULED INTERVALS", "SERVISNÉ INTERVALY"),
+        tr("SERVICE HISTORY", "HISTÓRIA SERVISU")
+    )
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showServiceDialog by remember { mutableStateOf(false) }
+    var editingServiceLog by remember { mutableStateOf<ServiceLogEntity?>(null) }
     var prefilledTaskName by remember { mutableStateOf("") }
     var prefilledTaskId by remember { mutableStateOf("GENERAL_SERVICE") }
     var prefilledLimitKm by remember { mutableStateOf(5000.0) }
+    var prefilledNotes by remember { mutableStateOf("") }
+
+    val activeSpecs = remember(activeBike?.technicalSpecsJson) {
+        try {
+            val raw = activeBike?.technicalSpecsJson
+            if (!raw.isNullOrBlank() && raw != "{}") {
+                Json { ignoreUnknownKeys = true; isLenient = true }.decodeFromString<com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto>(raw)
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     // Evaluated tasks for Tab 2
     val evaluatedTasks = remember(activeBike, allTasks, serviceLogs) {
@@ -73,7 +91,7 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
             TopAppBar(
                 title = {
                     Text(
-                        text = "Maintenance Service Hub",
+                        text = tr("Maintenance Service Hub", "Servis a údržba"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -89,13 +107,23 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
                     }
                 },
                 actions = {
+                    TextButton(onClick = { viewModel.toggleAppLanguage() }) {
+                        Text(
+                            text = if (appLang == AppLang.EN) "EN ▸ SK" else "SK ▸ EN",
+                            color = TelemetryIceCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
                     TextButton(onClick = {
-                        prefilledTaskName = "Periodic Inspection"
+                        editingServiceLog = null
+                        prefilledTaskName = if (appLang == AppLang.SK) "Pravidelná kontrola" else "Periodic Inspection"
                         prefilledTaskId = "PERIODIC_INSPECTION"
                         prefilledLimitKm = 5000.0
+                        prefilledNotes = ""
                         showServiceDialog = true
                     }) {
-                        Text("+ LOG SERVICE", color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
+                        Text(tr("+ LOG SERVICE", "+ ZAPÍSAŤ SERVIS"), color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -148,31 +176,50 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
                     activeBike = activeBike!!,
                     latestService = serviceLogs.firstOrNull(),
                     onNewInspection = {
+                        editingServiceLog = null
                         prefilledTaskName = "16-Point Inspection"
                         prefilledTaskId = "INSPECTION_16_POINT"
                         prefilledLimitKm = 5000.0
+                        prefilledNotes = ""
                         showServiceDialog = true
                     }
                 )
                 1 -> ScheduledIntervalsTab(
                     activeBike = activeBike!!,
+                    specs = activeSpecs,
                     evaluatedTasks = evaluatedTasks,
                     onCompleteTask = { task ->
+                        editingServiceLog = null
                         prefilledTaskName = task.taskName
                         prefilledTaskId = task.taskId
                         prefilledLimitKm = task.intervalKm ?: 5000.0
+                        prefilledNotes = task.notes
                         showServiceDialog = true
                     },
                     onAddTask = { newTask ->
                         scope.launch {
                             viewModel.repository.insertMaintenanceTask(newTask)
-                            snackbarHostState.showSnackbar("Task added to schedule")
+                            snackbarHostState.showSnackbar("Schedule updated")
+                        }
+                    },
+                    onDeleteTask = { task ->
+                        scope.launch {
+                            viewModel.deleteMaintenanceTask(task.taskId, activeBike!!.id)
+                            snackbarHostState.showSnackbar("Removed ${task.taskName} from schedule")
                         }
                     }
                 )
                 2 -> ServiceHistoryTab(
                     serviceLogs = serviceLogs,
                     currency = activeBike!!.currencySymbol,
+                    onEdit = { log ->
+                        editingServiceLog = log
+                        prefilledTaskName = log.serviceTitle
+                        prefilledTaskId = log.taskId
+                        prefilledLimitKm = log.limitKm
+                        prefilledNotes = log.notes
+                        showServiceDialog = true
+                    },
                     onDelete = { logId ->
                         scope.launch {
                             viewModel.deleteServiceLog(logId)
@@ -187,14 +234,25 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
     if (showServiceDialog && activeBike != null) {
         RecordServiceDialog(
             activeBike = activeBike!!,
+            existingLog = editingServiceLog,
             initialTitle = prefilledTaskName,
             initialTaskId = prefilledTaskId,
             initialLimitKm = prefilledLimitKm,
-            onDismiss = { showServiceDialog = false },
-            onSave = { entity ->
-                viewModel.addServiceLog(entity)
+            initialNotes = prefilledNotes,
+            onDismiss = {
                 showServiceDialog = false
-                scope.launch { snackbarHostState.showSnackbar("Service recorded successfully") }
+                editingServiceLog = null
+            },
+            onSave = { entity ->
+                if (editingServiceLog != null) {
+                    viewModel.updateServiceLog(entity)
+                    scope.launch { snackbarHostState.showSnackbar("Service record updated") }
+                } else {
+                    viewModel.addServiceLog(entity)
+                    scope.launch { snackbarHostState.showSnackbar("Service recorded successfully") }
+                }
+                showServiceDialog = false
+                editingServiceLog = null
             }
         )
     }
@@ -359,14 +417,17 @@ private fun ChecklistAndLastServiceTab(
 @Composable
 private fun ScheduledIntervalsTab(
     activeBike: MotorcycleEntity,
+    specs: com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto?,
     evaluatedTasks: List<MaintenanceTaskStatus>,
     onCompleteTask: (MaintenanceTaskEntity) -> Unit,
-    onAddTask: (MaintenanceTaskEntity) -> Unit
+    onAddTask: (MaintenanceTaskEntity) -> Unit,
+    onDeleteTask: (MaintenanceTaskEntity) -> Unit
 ) {
     var selectedCategoryFilter by remember { mutableStateOf("ALL") }
     var showAddTaskDialog by remember { mutableStateOf(false) }
+    var editingTask by remember { mutableStateOf<MaintenanceTaskEntity?>(null) }
 
-    val categories = listOf("ALL", "OVERDUE/SOON", "ENGINE", "DRIVETRAIN", "BRAKES", "TIRES", "SUSPENSION")
+    val categories = listOf("ALL", "OVERDUE/SOON", "ENGINE", "DRIVETRAIN", "BRAKES", "TIRES", "COOLING", "IGNITION")
 
     val filtered = evaluatedTasks.filter { status ->
         when (selectedCategoryFilter) {
@@ -382,12 +443,10 @@ private fun ScheduledIntervalsTab(
             .padding(16.dp)
     ) {
         // Filter Row + Add Task Action
+        val appLang = LocalAppLang.current
         Button(
             onClick = {
-                val dto = if (activeBike.technicalSpecsJson.isNotBlank() && activeBike.technicalSpecsJson != "{}") {
-                    kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto>(activeBike.technicalSpecsJson)
-                } else null
-                val newTasks = com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(dto)
+                val newTasks = com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(specs, appLang.code)
                 newTasks.forEach { taskDto ->
                     onAddTask(
                         com.motogeek.telemetry.data.local.MaintenanceTaskEntity(
@@ -410,7 +469,14 @@ private fun ScheduledIntervalsTab(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
         ) {
-            Text("+ Štandardné úkony (Chladiaca, Olej, Brzdy, Pneu)")
+            Text(
+                tr(
+                    "+ Load Standard Factory Schedule (Oil, Coolant, Brakes, Tires, Valves)",
+                    "+ Štandardné úkony (Chladiaca, Olej, Brzdy, Pneu, Ventily)"
+                ),
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp
+            )
         }
 
         Row(
@@ -434,7 +500,10 @@ private fun ScheduledIntervalsTab(
                     )
                 }
             }
-            IconButton(onClick = { showAddTaskDialog = true }) {
+            IconButton(onClick = {
+                editingTask = null
+                showAddTaskDialog = true
+            }) {
                 Icon(Icons.Default.Add, contentDescription = "Add Task", tint = RacingAmberPrimary)
             }
         }
@@ -451,7 +520,16 @@ private fun ScheduledIntervalsTab(
                 contentPadding = PaddingValues(bottom = 32.dp)
             ) {
                 items(filtered) { status ->
-                    ScheduledTaskCard(status = status, onComplete = { onCompleteTask(status.task) })
+                    ScheduledTaskCard(
+                        status = status,
+                        specs = specs,
+                        onComplete = { onCompleteTask(status.task) },
+                        onEdit = {
+                            editingTask = status.task
+                            showAddTaskDialog = true
+                        },
+                        onDelete = { onDeleteTask(status.task) }
+                    )
                 }
             }
         }
@@ -460,10 +538,15 @@ private fun ScheduledIntervalsTab(
     if (showAddTaskDialog) {
         AddScheduleTaskDialog(
             motorcycleId = activeBike.id,
-            onDismiss = { showAddTaskDialog = false },
+            existingTask = editingTask,
+            onDismiss = {
+                showAddTaskDialog = false
+                editingTask = null
+            },
             onSave = { task ->
                 onAddTask(task)
                 showAddTaskDialog = false
+                editingTask = null
             }
         )
     }
@@ -472,13 +555,17 @@ private fun ScheduledIntervalsTab(
 @Composable
 private fun ScheduledTaskCard(
     status: MaintenanceTaskStatus,
-    onComplete: () -> Unit
+    specs: com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto?,
+    onComplete: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val statusColor = when (status.status) {
         TaskStatus.OVERDUE -> RedlineCrimson
         TaskStatus.DUE_SOON -> WarningGold
         TaskStatus.OK -> ApexEmeraldGreen
     }
+    var showGuideExpanded by remember { mutableStateOf(false) }
 
     val animatedProgress by animateFloatAsState(targetValue = status.progressFraction, label = "progress")
 
@@ -554,21 +641,49 @@ private fun ScheduledTaskCard(
                 trackColor = TitaniumBorder
             )
 
-            if (status.task.notes.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "Specs / Notes: ${status.task.notes}",
-                    color = Color(0xFF8E9BB0),
-                    fontSize = 11.sp
-                )
+            val appLang = LocalAppLang.current
+            val procedureGuide = remember(status.task, specs, appLang) {
+                com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
+                    .getProcedureGuideForTask(status.task.taskName, status.task.category, specs, appLang.code)
             }
+            val finalNotes = procedureGuide.ifBlank { status.task.notes }
 
             Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (finalNotes.isNotBlank()) {
+                        TextButton(
+                            onClick = { showGuideExpanded = !showGuideExpanded },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                if (showGuideExpanded) Icons.Default.ExpandLess else Icons.Default.Build,
+                                contentDescription = null,
+                                tint = TelemetryIceCyan,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                if (showGuideExpanded) tr("Hide Repair Guide", "Skryť postup") else tr("Repair Guide & Torques", "Postup a momenty"),
+                                color = TelemetryIceCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit task", tint = Color.Gray, modifier = Modifier.size(15.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete task", tint = RedlineCrimson.copy(alpha = 0.8f), modifier = Modifier.size(15.dp))
+                    }
+                }
+
                 Button(
                     onClick = onComplete,
                     colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
@@ -578,14 +693,19 @@ private fun ScheduledTaskCard(
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Complete Task", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(tr("Complete Task", "Hotovo"), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            val finalNotes = status.task.notes.takeIf { it.isNotBlank() } ?: com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog.getProcedureGuideForTask(status.task.taskName, status.task.category, null)
-            if (finalNotes.isNotBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Box(modifier = Modifier.fillMaxWidth().background(Color(0xFF1E1E1E), RoundedCornerShape(8.dp)).padding(10.dp)) {
-                    Text(text = finalNotes, color = Color.LightGray, fontSize = 12.sp, lineHeight = 16.sp)
+
+            if (showGuideExpanded && finalNotes.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF151A24), RoundedCornerShape(8.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(text = finalNotes, color = Color.LightGray, fontSize = 12.sp, lineHeight = 17.sp)
                 }
             }
         }
@@ -596,6 +716,7 @@ private fun ScheduledTaskCard(
 private fun ServiceHistoryTab(
     serviceLogs: List<ServiceLogEntity>,
     currency: String,
+    onEdit: (ServiceLogEntity) -> Unit,
     onDelete: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -681,8 +802,13 @@ private fun ServiceHistoryTab(
                                 }
                             }
 
-                            IconButton(onClick = { onDelete(log.logId) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = RedlineCrimson)
+                            Row {
+                                IconButton(onClick = { onEdit(log) }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = TelemetryIceCyan)
+                                }
+                                IconButton(onClick = { onDelete(log.logId) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = RedlineCrimson)
+                                }
                             }
                         }
                     }
@@ -695,23 +821,29 @@ private fun ServiceHistoryTab(
 @Composable
 private fun RecordServiceDialog(
     activeBike: MotorcycleEntity,
+    existingLog: ServiceLogEntity? = null,
     initialTitle: String,
     initialTaskId: String,
     initialLimitKm: Double,
+    initialNotes: String = "",
     onDismiss: () -> Unit,
     onSave: (ServiceLogEntity) -> Unit
 ) {
-    var title by remember { mutableStateOf(initialTitle) }
-    var odoText by remember { mutableStateOf(activeBike.totalOdometerKm.toInt().toString()) }
-    var limitKmText by remember { mutableStateOf(initialLimitKm.toInt().toString()) }
-    var costText by remember { mutableStateOf("0") }
-    var location by remember { mutableStateOf("Home Garage") }
-    var notes by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf(existingLog?.serviceTitle ?: initialTitle) }
+    var odoText by remember { mutableStateOf((existingLog?.odometerAtServiceKm ?: activeBike.totalOdometerKm).toInt().toString()) }
+    var limitKmText by remember { mutableStateOf((existingLog?.limitKm ?: initialLimitKm).toInt().toString()) }
+    var costText by remember { mutableStateOf((existingLog?.costEur ?: 0.0).toString()) }
+    var location by remember { mutableStateOf(existingLog?.locationOrShop ?: "Home Garage") }
+    var notes by remember { mutableStateOf(existingLog?.notes ?: initialNotes) }
 
     // 16 inspection items
-    val checklistState = remember {
+    val checklistState = remember(existingLog) {
         mutableStateMapOf<String, String>().apply {
-            DefaultServiceChecklistNames.forEach { put(it, "CHECKED") }
+            if (existingLog != null) {
+                existingLog.parseChecklist().forEach { put(it.name, it.status) }
+            } else {
+                DefaultServiceChecklistNames.forEach { put(it, "CHECKED") }
+            }
         }
     }
 
@@ -867,18 +999,18 @@ private fun RecordServiceDialog(
                     )
 
                     val entity = ServiceLogEntity(
-                        logId = UUID.randomUUID().toString(),
+                        logId = existingLog?.logId ?: UUID.randomUUID().toString(),
                         motorcycleId = activeBike.id,
-                        taskId = initialTaskId,
+                        taskId = existingLog?.taskId ?: initialTaskId,
                         serviceTitle = title.ifBlank { "Periodic Service" },
                         locationOrShop = location.ifBlank { "Home Garage" },
-                        performedAtIsoDate = LocalDate.now().format(DateTimeFormatter.ISO_DATE),
+                        performedAtIsoDate = existingLog?.performedAtIsoDate ?: LocalDate.now().format(DateTimeFormatter.ISO_DATE),
                         odometerAtServiceKm = odo,
                         servicedAtKm = odo,
                         limitKm = limit,
                         endKm = odo + limit,
                         costEur = cost,
-                        performedBy = "Self",
+                        performedBy = existingLog?.performedBy ?: "Self",
                         notes = notes,
                         checklistItemsJson = checklistJson
                     )
@@ -886,7 +1018,7 @@ private fun RecordServiceDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
-                Text("Save Service Log", fontWeight = FontWeight.Bold)
+                Text(if (existingLog != null) "Update Service Log" else "Save Service Log", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -898,20 +1030,21 @@ private fun RecordServiceDialog(
 @Composable
 private fun AddScheduleTaskDialog(
     motorcycleId: String,
+    existingTask: MaintenanceTaskEntity? = null,
     onDismiss: () -> Unit,
     onSave: (MaintenanceTaskEntity) -> Unit
 ) {
-    var taskName by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Engine") }
-    var actionType by remember { mutableStateOf("Replace") }
-    var intervalKm by remember { mutableStateOf("10000") }
-    var intervalMonths by remember { mutableStateOf("12") }
-    var notes by remember { mutableStateOf("") }
+    var taskName by remember { mutableStateOf(existingTask?.taskName ?: "") }
+    var category by remember { mutableStateOf(existingTask?.category ?: "Engine") }
+    var actionType by remember { mutableStateOf(existingTask?.actionType ?: "Replace") }
+    var intervalKm by remember { mutableStateOf((existingTask?.intervalKm?.toInt() ?: 10000).toString()) }
+    var intervalMonths by remember { mutableStateOf((existingTask?.intervalMonths ?: 12).toString()) }
+    var notes by remember { mutableStateOf(existingTask?.notes ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TftSurfaceDark,
-        title = { Text("Add Maintenance Task", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = { Text(if (existingTask != null) "Edit Maintenance Task" else "Add Maintenance Task", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
@@ -998,24 +1131,24 @@ private fun AddScheduleTaskDialog(
             Button(
                 onClick = {
                     val task = MaintenanceTaskEntity(
-                        taskId = UUID.randomUUID().toString(),
+                        taskId = existingTask?.taskId ?: UUID.randomUUID().toString(),
                         motorcycleId = motorcycleId,
                         category = category.ifBlank { "General" },
                         taskName = taskName.ifBlank { "Periodic Check" },
                         actionType = actionType.ifBlank { "Inspect" },
-                        firstBreakInAtKm = 1000.0,
+                        firstBreakInAtKm = existingTask?.firstBreakInAtKm ?: 1000.0,
                         intervalKm = intervalKm.toSafeDouble(10000.0),
                         intervalMonths = intervalMonths.toIntOrNull() ?: 12,
-                        warningThresholdKm = 500.0,
-                        warningThresholdDays = 30,
-                        oemPartNumbersJson = "[]",
+                        warningThresholdKm = existingTask?.warningThresholdKm ?: 500.0,
+                        warningThresholdDays = existingTask?.warningThresholdDays ?: 30,
+                        oemPartNumbersJson = existingTask?.oemPartNumbersJson ?: "[]",
                         notes = notes
                     )
                     onSave(task)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
-                Text("Add Task", fontWeight = FontWeight.Bold)
+                Text(if (existingTask != null) "Save Changes" else "Add Task", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

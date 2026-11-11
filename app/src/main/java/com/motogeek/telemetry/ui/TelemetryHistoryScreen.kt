@@ -31,23 +31,50 @@ import java.util.*
 @Composable
 fun TelemetryHistoryScreen(viewModel: MainViewModel) {
     val rides by viewModel.allRides.collectAsState(initial = emptyList())
+    val activeBike by viewModel.activeMotorcycle.collectAsState()
+    val allBikes by viewModel.allMotorcycles.collectAsState()
+    var filterActiveBikeOnly by remember { mutableStateOf(false) }
     var selectedRide by remember { mutableStateOf<RideSessionEntity?>(null) }
+
+    val displayedRides = remember(rides, activeBike, filterActiveBikeOnly) {
+        if (filterActiveBikeOnly && activeBike != null) {
+            rides.filter { it.motorcycleId == activeBike!!.id }
+        } else {
+            rides
+        }
+    }
 
     if (selectedRide == null) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            Text(
-                text = "Ride History",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Ride History",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                if (activeBike != null) {
+                    FilterChip(
+                        selected = filterActiveBikeOnly,
+                        onClick = { filterActiveBikeOnly = !filterActiveBikeOnly },
+                        label = {
+                            Text(if (filterActiveBikeOnly) activeBike!!.displayName else "All Bikes")
+                        }
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
 
             LazyColumn(
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                items(rides) { ride ->
+                items(displayedRides) { ride ->
                     val sdf = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
                     val dateStr = sdf.format(Date(ride.startTimeEpochMs))
+                    val bikeName = allBikes.find { it.id == ride.motorcycleId }?.displayName ?: "Motorcycle"
 
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable {
@@ -56,9 +83,7 @@ fun TelemetryHistoryScreen(viewModel: MainViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(text = ride.name ?: dateStr, fontWeight = FontWeight.Bold)
-                            if (ride.name != null) {
-                                Text(text = dateStr, style = MaterialTheme.typography.bodySmall)
-                            }
+                            Text(text = "$bikeName • $dateStr", style = MaterialTheme.typography.bodySmall)
                             Text(text = "Distance: " + String.format("%.1f km", ride.distanceKm))
                             Text(text = "Style: ${ride.ridingStyleBadge}")
                             Spacer(modifier = Modifier.height(8.dp))
@@ -164,9 +189,24 @@ fun TelemetryHistoryScreen(viewModel: MainViewModel) {
                         }
                     },
                     actions = {
+                        TextButton(onClick = {
+                            coroutineScope.launch {
+                                viewModel.importExportManager.shareRideGpx(ride.rideId)
+                            }
+                        }) {
+                            Text("GPX")
+                        }
+                        TextButton(onClick = {
+                            coroutineScope.launch {
+                                viewModel.importExportManager.shareRideGoProCsv(ride.rideId)
+                            }
+                        }) {
+                            Text("CSV")
+                        }
                         IconButton(onClick = {
                             coroutineScope.launch {
-                                val file = RideSocialCardGenerator.generateAndSaveCard(context, ride, trackPoints)
+                                val bikeDisplayName = allBikes.find { it.id == ride.motorcycleId }?.displayName ?: "Motorcycle"
+                                val file = RideSocialCardGenerator.generateAndSaveCard(context, ride, trackPoints, bikeDisplayName)
                                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "image/png"

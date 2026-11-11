@@ -24,7 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.motogeek.telemetry.domain.maintenance.MotorcycleBackupDto
 import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
+import com.motogeek.telemetry.domain.maintenance.RestoreMode
 import com.motogeek.telemetry.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -38,17 +40,21 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
 
     var showPasteDialog by remember { mutableStateOf(false) }
     var pasteJsonText by remember { mutableStateOf("") }
-
-
+    var selectedRestoreMode by remember { mutableStateOf(RestoreMode.MERGE) }
+    var hasSafetySnapshot by remember { mutableStateOf(viewModel.importExportManager.hasPreRestoreSnapshot()) }
+    var pendingTemplate by remember { mutableStateOf<Pair<String, MotorcycleBackupDto>?>(null) }
 
     // SAF Import Launcher (Supports Local Storage, Google Drive, Nextcloud, Dropbox, etc.)
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
-                val res = viewModel.importExportManager.importGarageBackup(uri, activeBike?.id)
+                val res = viewModel.importExportManager.importGarageBackup(uri, activeBike?.id, selectedRestoreMode)
+                hasSafetySnapshot = viewModel.importExportManager.hasPreRestoreSnapshot()
                 if (res.isSuccess) {
                     val s = res.getOrNull()
-                    snackbarHostState.showSnackbar("Import Successful! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks, ${s?.logsImported ?: 0} logs added.")
+                    snackbarHostState.showSnackbar(
+                        "Import Successful! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks, ${s?.logsImported ?: 0} service logs, ${s?.ridesImported ?: 0} rides."
+                    )
                 } else {
                     snackbarHostState.showSnackbar("Import Error: ${res.exceptionOrNull()?.message}")
                 }
@@ -78,7 +84,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
             TopAppBar(
                 title = {
                     Text(
-                        text = "JSON & Cloud Backup",
+                        text = tr("JSON & Cloud Backup", "JSON a Cloud záloha"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -91,6 +97,17 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                         }
                     }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = RacingAmberPrimary)
+                    }
+                },
+                actions = {
+                    val appLang = LocalAppLang.current
+                    TextButton(onClick = { viewModel.toggleAppLanguage() }) {
+                        Text(
+                            text = if (appLang == AppLang.EN) "EN ▸ SK" else "SK ▸ EN",
+                            color = TelemetryIceCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -130,11 +147,37 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Full garage backup includes motorcycles, custom schedules, torque tables, and all service records.",
+                        text = "Full garage backup v2 includes all motorcycles, schedules, torques, service checklists, fuel & part logs, reminders, and GPS ride sessions.",
                         color = Color.Gray,
                         fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                        modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
                     )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedRestoreMode == RestoreMode.MERGE,
+                            onClick = { selectedRestoreMode = RestoreMode.MERGE },
+                            label = { Text("Import Mode: Merge (Safe)", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = TelemetryIceCyan.copy(alpha = 0.2f),
+                                selectedLabelColor = TelemetryIceCyan
+                            )
+                        )
+                        FilterChip(
+                            selected = selectedRestoreMode == RestoreMode.REPLACE,
+                            onClick = { selectedRestoreMode = RestoreMode.REPLACE },
+                            label = { Text("Replace Garage", fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = RacingAmberPrimary.copy(alpha = 0.2f),
+                                selectedLabelColor = RacingAmberPrimary
+                            )
+                        )
+                    }
 
                     // Export Full Garage JSON Button
                     Button(
@@ -159,7 +202,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                     ) {
                         Icon(Icons.Default.FileOpen, contentDescription = null, tint = TelemetryIceCyan, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Import JSON Backup File", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Import JSON Backup File (${selectedRestoreMode.name})", color = Color.White, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -181,6 +224,29 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                         Icon(Icons.Default.ContentPaste, contentDescription = null, tint = ApexEmeraldGreen, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Paste AI JSON / Clipboard Import", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
+                    if (hasSafetySnapshot) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    val res = viewModel.importExportManager.restoreLastSafetySnapshot()
+                                    if (res.isSuccess) {
+                                        snackbarHostState.showSnackbar("Safety Snapshot Restored Successfully!")
+                                    } else {
+                                        snackbarHostState.showSnackbar("Snapshot Restore Failed: ${res.exceptionOrNull()?.message}")
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, WarningGold),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Restore, contentDescription = null, tint = WarningGold, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Undo Last Replace (Restore Safety Snapshot)", color = WarningGold, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -219,12 +285,17 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
 
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    val appLang = LocalAppLang.current
                     Button(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("AI Mechanic Prompt", viewModel.importExportManager.aiServiceManualPrompt))
+                            val prompt = viewModel.importExportManager.buildAiServiceManualPrompt(activeBike, appLang.code)
+                            clipboard.setPrimaryClip(ClipData.newPlainText("AI Mechanic Prompt", prompt))
                             scope.launch {
-                                snackbarHostState.showSnackbar("AI Master Mechanic Prompt copied to clipboard!")
+                                snackbarHostState.showSnackbar(
+                                    if (appLang == AppLang.SK) "AI prompt skopírovaný do schránky!"
+                                    else "AI Master Mechanic Prompt copied to clipboard!"
+                                )
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = TftSurfaceElevated),
@@ -258,24 +329,22 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                     Spacer(modifier = Modifier.height(10.dp))
 
                     TemplateTile("Universal Motorcycle", "Standard 5000 km intervals, 4-stroke", onApply = {
-                        viewModel.applyTemplate(MotorcycleTemplateCatalog.universal)
-                        scope.launch { snackbarHostState.showSnackbar("Universal template applied!") }
+                        pendingTemplate = "Universal Motorcycle" to MotorcycleTemplateCatalog.universal
                     })
                     TemplateTile("Yamaha MT-09 / Tracer 9", "CP3 890cc • 10,000 km service • Factory torques", onApply = {
-                        viewModel.applyTemplate(MotorcycleTemplateCatalog.mt09)
-                        scope.launch { snackbarHostState.showSnackbar("Yamaha MT-09 template applied!") }
+                        pendingTemplate = "Yamaha MT-09" to MotorcycleTemplateCatalog.mt09
                     })
                     TemplateTile("Honda CB650R / CBR650R", "Inline-4 649cc • 12,000 km service intervals", onApply = {
-                        viewModel.applyTemplate(MotorcycleTemplateCatalog.cb650r)
-                        scope.launch { snackbarHostState.showSnackbar("Honda CB650R template applied!") }
+                        pendingTemplate = "Honda CB650R" to MotorcycleTemplateCatalog.cb650r
                     })
                     TemplateTile("BMW R1250GS Boxer", "1254cc ShiftCam • Cardan shaft & valve checks", onApply = {
-                        viewModel.applyTemplate(MotorcycleTemplateCatalog.r1250gs)
-                        scope.launch { snackbarHostState.showSnackbar("BMW R1250GS template applied!") }
+                        pendingTemplate = "BMW R1250GS" to MotorcycleTemplateCatalog.r1250gs
                     })
                     TemplateTile("KTM 890 Duke / Adventure", "889cc Parallel-Twin • 15,000 km intervals & torques", onApply = {
-                        viewModel.applyTemplate(MotorcycleTemplateCatalog.ktm890)
-                        scope.launch { snackbarHostState.showSnackbar("KTM 890 template applied!") }
+                        pendingTemplate = "KTM 890 Duke" to MotorcycleTemplateCatalog.ktm890
+                    })
+                    TemplateTile("Kawasaki Z900", "948cc Inline-4 • 12,000 km intervals & torques", onApply = {
+                        pendingTemplate = "Kawasaki Z900" to MotorcycleTemplateCatalog.z900
                     })
                 }
             }
@@ -284,8 +353,57 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
         }
     }
 
-
-
+    pendingTemplate?.let { (label, templateDto) ->
+        AlertDialog(
+            onDismissRequest = { pendingTemplate = null },
+            containerColor = TftSurfaceDark,
+            title = { Text("Apply $label Template?", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    text = if (activeBike != null) {
+                        "Choose whether to apply $label factory specs & schedule to your active motorcycle (${activeBike?.displayName}) or add it as a new motorcycle in your garage."
+                    } else {
+                        "Add $label with factory specs, torques, and maintenance schedule to your garage?"
+                    },
+                    color = Color.LightGray,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (activeBike != null) {
+                        Button(
+                            onClick = {
+                                viewModel.applyTemplate(templateDto, applyToActiveBike = true)
+                                pendingTemplate = null
+                                scope.launch { snackbarHostState.showSnackbar("Applied $label specs & schedule to ${activeBike?.displayName}!") }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Update Active Bike (${activeBike?.displayName})", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.applyTemplate(templateDto, applyToActiveBike = false)
+                            pendingTemplate = null
+                            scope.launch { snackbarHostState.showSnackbar("Added $label as a new motorcycle!") }
+                        },
+                        border = BorderStroke(1.dp, TelemetryIceCyan),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Add as New Motorcycle", color = TelemetryIceCyan, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTemplate = null }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            }
+        )
+    }
 
     if (showPasteDialog) {
         AlertDialog(
@@ -320,7 +438,12 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                 Button(
                     onClick = {
                         scope.launch {
-                            val res = viewModel.importExportManager.importFromJsonString(pasteJsonText, activeBike?.id)
+                            val res = viewModel.importExportManager.importFromJsonString(
+                                pasteJsonText,
+                                activeBike?.id,
+                                selectedRestoreMode
+                            )
+                            hasSafetySnapshot = viewModel.importExportManager.hasPreRestoreSnapshot()
                             if (res.isSuccess) {
                                 val s = res.getOrNull()
                                 snackbarHostState.showSnackbar("Successfully imported! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks.")
@@ -587,10 +710,38 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
     }
 
     if (showRestoreConfirm) {
+        var cloudRestoreMode by remember { mutableStateOf(RestoreMode.MERGE) }
         AlertDialog(
             onDismissRequest = { showRestoreConfirm = false },
             title = { Text("Restore from Cloud?", color = Color.White) },
-            text = { Text("This will add the cloud garage backup to your current data. Duplicates may be overwritten based on ID.", color = Color.LightGray) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Choose how to restore your Google Drive garage backup:",
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = cloudRestoreMode == RestoreMode.MERGE,
+                            onClick = { cloudRestoreMode = RestoreMode.MERGE },
+                            label = { Text("Merge (Safe)", fontSize = 12.sp) }
+                        )
+                        FilterChip(
+                            selected = cloudRestoreMode == RestoreMode.REPLACE,
+                            onClick = { cloudRestoreMode = RestoreMode.REPLACE },
+                            label = { Text("Replace Garage", fontSize = 12.sp) }
+                        )
+                    }
+                    if (cloudRestoreMode == RestoreMode.REPLACE) {
+                        Text(
+                            "A pre-restore safety snapshot of your current local garage will be saved automatically before replacing.",
+                            color = ApexAmber,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            },
             containerColor = DarkCharcoalBg,
             confirmButton = {
                 Button(
@@ -600,12 +751,12 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         scope.launch {
                             accountError = null
                             val res = try {
-                                viewModel.googleDriveBackupManager.restoreFromDrive()
+                                viewModel.googleDriveBackupManager.restoreFromDrive(cloudRestoreMode)
                             } finally {
                                 isRestoring = false
                             }
                             if (res.isSuccess) {
-                                snackbarHostState?.showSnackbar("Restore from Drive successful")
+                                snackbarHostState?.showSnackbar("Restore from Drive (${cloudRestoreMode.name}) successful")
                             } else {
                                 handleCloudFailure(res.exceptionOrNull())
                             }

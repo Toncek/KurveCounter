@@ -1,11 +1,15 @@
 package com.motogeek.telemetry.worker
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.motogeek.telemetry.MainActivity
@@ -15,6 +19,8 @@ import com.motogeek.telemetry.data.local.MotoGeekRepository
 import com.motogeek.telemetry.domain.maintenance.MaintenanceEvaluator
 import com.motogeek.telemetry.domain.maintenance.TaskStatus
 import kotlinx.coroutines.flow.first
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 class MaintenanceCheckWorker(
     appContext: Context,
@@ -28,27 +34,52 @@ class MaintenanceCheckWorker(
         val evaluator = MaintenanceEvaluator()
 
         val motorcycles = repository.getAllMotorcycles().first()
+        val today = LocalDate.now()
 
         for (bike in motorcycles) {
             val tasks = repository.getMaintenanceTasksForMotorcycle(bike.id)
             val logs = repository.getServiceLogsForMotorcycle(bike.id)
-            val evaluated = evaluator.evaluate(bike, tasks, logs)
+            val evaluated = evaluator.evaluate(bike, tasks, logs, today)
 
             val overdue = evaluated.filter { it.status == TaskStatus.OVERDUE }
             val dueSoon = evaluated.filter { it.status == TaskStatus.DUE_SOON }
 
-            if (overdue.isNotEmpty() || dueSoon.isNotEmpty()) {
-                sendNotification(context, bike.make + " " + bike.model, overdue.size, dueSoon.size)
+            val reminders = repository.getRemindersForMotorcycleList(bike.id).filter { !it.isCompleted }
+            val dueRemindersCount = reminders.count { rem ->
+                val dueByKm = rem.targetOdometerKm != null && (rem.targetOdometerKm - bike.totalOdometerKm) <= 500.0
+                val dueByDate = rem.targetDateIso != null && run {
+                    val targetDate = MaintenanceEvaluator.parseFlexibleLocalDate(rem.targetDateIso, today.plusYears(10))
+                    ChronoUnit.DAYS.between(today, targetDate) <= 7L
+                }
+                dueByKm || dueByDate
+            }
+
+            if (overdue.isNotEmpty() || dueSoon.isNotEmpty() || dueRemindersCount > 0) {
+                sendNotification(context, bike.displayName, overdue.size, dueSoon.size, dueRemindersCount)
             }
         }
         return Result.success()
     }
 
-    private fun sendNotification(context: Context, bikeName: String, overdueCount: Int, dueSoonCount: Int) {
+    private fun sendNotification(
+        context: Context,
+        bikeName: String,
+        overdueCount: Int,
+        dueSoonCount: Int,
+        dueRemindersCount: Int
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) return
+        }
+
         val channelId = "maintenance_alerts"
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "Maintenance Alerts", NotificationManager.IMPORTANCE_HIGH)
             notificationManager.createNotificationChannel(channel)
         }
@@ -60,8 +91,9 @@ class MaintenanceCheckWorker(
 
         val text = buildString {
             if (overdueCount > 0) append("$overdueCount task(s) OVERDUE. ")
-            if (dueSoonCount > 0) append("$dueSoonCount task(s) due soon.")
-        }
+            if (dueSoonCount > 0) append("$dueSoonCount task(s) due soon. ")
+            if (dueRemindersCount > 0) append("$dueRemindersCount reminder(s) due.")
+        }.trim()
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)

@@ -12,8 +12,13 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -25,8 +30,11 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.motogeek.telemetry.service.TelemetryForegroundService
 import com.motogeek.telemetry.ui.*
+import com.motogeek.telemetry.ui.theme.AppLang
+import com.motogeek.telemetry.ui.theme.LocalAppLang
 import com.motogeek.telemetry.ui.theme.MotoGeekTelemetryTheme
 import com.motogeek.telemetry.ui.theme.CrimsonHeaderRed
+import com.motogeek.telemetry.ui.theme.tr
 import com.motogeek.telemetry.service.TelemetryPreferences
 import com.motogeek.telemetry.ui.components.MotoGeekDrawerSheet
 import kotlinx.coroutines.launch
@@ -51,103 +59,163 @@ class MainActivity : ComponentActivity() {
         checkAndStartMonitoring()
 
         setContent {
-            MotoGeekTelemetryTheme {
-                val navController = rememberNavController()
-                val showOnboarding by viewModel.showOnboarding.collectAsState()
-                val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)
-                val allBikes by viewModel.repository.getAllMotorcycles().collectAsState(initial = emptyList())
+            val appLang by viewModel.appLanguage.collectAsState()
+            CompositionLocalProvider(LocalAppLang provides appLang) {
+                MotoGeekTelemetryTheme {
+                    val navController = rememberNavController()
+                    val showOnboarding by viewModel.showOnboarding.collectAsState()
+                    val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)
+                    val allBikes by viewModel.repository.getAllMotorcycles().collectAsState(initial = emptyList())
 
-                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-                val scope = rememberCoroutineScope()
+                    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                    val scope = rememberCoroutineScope()
 
-                if (showOnboarding) {
-                    AlertDialog(
-                        onDismissRequest = { viewModel.dismissOnboarding() },
-                        title = { Text("Welcome to MotoGeek Telemetry") },
-                        text = { Text("We have seeded your garage with a Universal Motorcycle Template.\n\nGo to the Garage tab to Edit your bike details, apply one of the 6 Built-In Templates, or paste a custom JSON schedule.") },
-                        confirmButton = {
-                            Button(onClick = { viewModel.dismissOnboarding() }) {
-                                Text("Let's Ride!")
-                            }
-                        }
-                    )
-                }
-
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = navBackStackEntry?.destination?.route
-
-                ModalNavigationDrawer(
-                    drawerState = drawerState,
-                    drawerContent = {
-                        MotoGeekDrawerSheet(
-                            activeBike = activeBike,
-                            allBikes = allBikes,
-                            onBikeSelected = { bikeId ->
-                                scope.launch { viewModel.repository.selectActiveMotorcycle(bikeId) }
+                    if (showOnboarding) {
+                        AlertDialog(
+                            onDismissRequest = { viewModel.dismissOnboarding() },
+                            title = { Text(tr("Welcome to MotoGeek Telemetry", "Vitajte v MotoGeek Telemetry")) },
+                            text = {
+                                Text(
+                                    tr(
+                                        "We have seeded your garage with a Universal Motorcycle Template.\n\nGo to the Garage tab to Edit your bike details, apply one of the 6 Built-In Templates, or paste a custom JSON schedule.",
+                                        "Vašu garáž sme predvyplnili univerzálnou šablónou motocykla.\n\nV sekcii Garáž môžete upraviť údaje o motorke, použiť jednu zo 6 vstavaných šablón alebo vložiť vlastný JSON servisný plán."
+                                    )
+                                )
                             },
-                            onAddNewBike = {
-                                navController.navigate("bike_info")
-                            },
-                            onSyncOdometer = { newKm ->
-                                viewModel.updateActiveBikeOdometer(newKm)
-                            },
-                            currentRoute = currentRoute,
-                            onNavigate = { route ->
-                                scope.launch { drawerState.close() }
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
+                            confirmButton = {
+                                Button(onClick = { viewModel.dismissOnboarding() }) {
+                                    Text(tr("Let's Ride!", "Poďme jazdiť!"))
                                 }
                             }
                         )
                     }
-                ) {
-                    Scaffold(
-                        topBar = {
-                            if (currentRoute == "home" || currentRoute == null || currentRoute == "cockpit" || currentRoute == "history") {
-                                @OptIn(ExperimentalMaterial3Api::class)
-                                TopAppBar(
-                                    title = {
-                                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                            Text(
-                                                text = "KURVE",
-                                                color = com.motogeek.telemetry.ui.theme.RacingAmberPrimary,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Black,
-                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                letterSpacing = 1.sp
-                                            )
-                                            val subTitle = when (currentRoute) {
-                                                "cockpit" -> " // COCKPIT"
-                                                "history" -> " // HISTORY"
-                                                else -> " // TFT"
-                                            }
-                                            Text(
-                                                text = subTitle,
-                                                color = Color.White,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                letterSpacing = 1.sp
-                                            )
+
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = navBackStackEntry?.destination?.route
+
+                    ModalNavigationDrawer(
+                        drawerState = drawerState,
+                        drawerContent = {
+                            MotoGeekDrawerSheet(
+                                activeBike = activeBike,
+                                allBikes = allBikes,
+                                onBikeSelected = { bikeId ->
+                                    scope.launch { viewModel.repository.selectActiveMotorcycle(bikeId) }
+                                },
+                                onAddNewBike = {
+                                    navController.navigate("bike_info")
+                                },
+                                onSyncOdometer = { newKm ->
+                                    viewModel.updateActiveBikeOdometer(newKm)
+                                },
+                                currentLanguage = appLang,
+                                onLanguageToggle = { viewModel.toggleAppLanguage() },
+                                currentRoute = currentRoute,
+                                onNavigate = { route ->
+                                    scope.launch { drawerState.close() }
+                                    navController.navigate(route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
                                         }
-                                    },
-                                    navigationIcon = {
-                                        if (currentRoute == "cockpit" || currentRoute == "history") {
-                                            IconButton(onClick = { navController.navigate("home") { popUpTo("home") { inclusive = false } } }) {
-                                                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            )
+                        }
+                    ) {
+                        Scaffold(
+                            topBar = {
+                                if (currentRoute == "home" || currentRoute == null || currentRoute == "cockpit" || currentRoute == "history") {
+                                    @OptIn(ExperimentalMaterial3Api::class)
+                                    TopAppBar(
+                                        title = {
+                                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "KURVE",
+                                                    color = com.motogeek.telemetry.ui.theme.RacingAmberPrimary,
+                                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Black,
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                    letterSpacing = 1.sp
+                                                )
+                                                val subTitle = when (currentRoute) {
+                                                    "cockpit" -> tr(" // COCKPIT", " // KOKPIT")
+                                                    "history" -> tr(" // HISTORY", " // HISTÓRIA")
+                                                    else -> " // TFT"
+                                                }
+                                                Text(
+                                                    text = subTitle,
+                                                    color = Color.White,
+                                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                    letterSpacing = 1.sp
+                                                )
                                             }
-                                        } else {
-                                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                                Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                        },
+                                        navigationIcon = {
+                                            if (currentRoute == "cockpit" || currentRoute == "history") {
+                                                IconButton(onClick = { navController.navigate("home") { popUpTo("home") { inclusive = false } } }) {
+                                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                                }
+                                            } else {
+                                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                                    Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                                }
                                             }
-                                        }
-                                    },
-                                    colors = TopAppBarDefaults.topAppBarColors(
-                                        containerColor = com.motogeek.telemetry.ui.theme.CarbonObsidianBg
+                                        },
+                                        actions = {
+                                            TextButton(onClick = { viewModel.toggleAppLanguage() }) {
+                                                Text(
+                                                    text = if (appLang == AppLang.EN) "EN ▸ SK" else "SK ▸ EN",
+                                                    color = com.motogeek.telemetry.ui.theme.TelemetryIceCyan,
+                                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        },
+                                        colors = TopAppBarDefaults.topAppBarColors(
+                                            containerColor = com.motogeek.telemetry.ui.theme.CarbonObsidianBg
+                                        )
                                     )
+                                }
+                            },
+                            bottomBar = {
+                                val bottomNavRoutes = listOf(
+                                    Triple("home", tr("Home", "Domov"), Icons.Default.Home),
+                                    Triple("cockpit", tr("Cockpit", "Kokpit"), Icons.Default.Speed),
+                                    Triple("maintenance", tr("Service", "Servis"), Icons.Default.Build),
+                                    Triple("bike_info", tr("Bike/Specs", "Motorka"), Icons.Default.TwoWheeler),
+                                    Triple("dashboard", tr("Analytics", "Analýza"), Icons.Default.Analytics)
                                 )
+                            NavigationBar(
+                                containerColor = com.motogeek.telemetry.ui.theme.TftSurfaceDark,
+                                contentColor = Color.White
+                            ) {
+                                bottomNavRoutes.forEach { (route, label, icon) ->
+                                    val selected = currentRoute == route || (route == "bike_info" && currentRoute == "garage")
+                                    NavigationBarItem(
+                                        selected = selected,
+                                        onClick = {
+                                            navController.navigate(route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
+                                        },
+                                        icon = { Icon(icon, contentDescription = label) },
+                                        label = { Text(label, fontSize = 10.sp) },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = com.motogeek.telemetry.ui.theme.RacingAmberPrimary,
+                                            selectedTextColor = com.motogeek.telemetry.ui.theme.RacingAmberPrimary,
+                                            indicatorColor = com.motogeek.telemetry.ui.theme.RacingAmberPrimary.copy(alpha = 0.15f),
+                                            unselectedIconColor = Color.Gray,
+                                            unselectedTextColor = Color.Gray
+                                        )
+                                    )
+                                }
                             }
                         }
                     ) { innerPadding ->
@@ -177,6 +245,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }

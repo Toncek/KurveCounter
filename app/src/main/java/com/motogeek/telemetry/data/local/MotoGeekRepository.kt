@@ -33,6 +33,10 @@ class MotoGeekRepository(val dao: MotoGeekDao) {
         dao.deleteMotorcycle(motorcycleId)
     }
 
+    suspend fun deleteAllMotorcycles() {
+        dao.deleteAllMotorcycles()
+    }
+
     suspend fun updateOdometerManualOffset(motorcycleId: String, userTargetOdometerKm: Double, baseOdometerKm: Double, accumulatedTrackedKm: Double) {
         val offset = userTargetOdometerKm - (baseOdometerKm + accumulatedTrackedKm)
         dao.updateMotorcycleManualOffset(motorcycleId, offset)
@@ -46,6 +50,9 @@ class MotoGeekRepository(val dao: MotoGeekDao) {
 
     fun getRideSessionsForMotorcycle(motorcycleId: String): Flow<List<RideSessionEntity>> =
         dao.getRideSessionsForMotorcycle(motorcycleId)
+
+    suspend fun getRideSessionsForMotorcycleList(motorcycleId: String): List<RideSessionEntity> =
+        dao.getRideSessionsForMotorcycleList(motorcycleId)
 
     suspend fun getRideSessionById(rideId: Long): RideSessionEntity? = dao.getRideSessionById(rideId)
 
@@ -150,6 +157,8 @@ class MotoGeekRepository(val dao: MotoGeekDao) {
     suspend fun deleteReminder(reminderId: Long) { dao.deleteReminder(reminderId) }
     fun getRemindersForMotorcycle(motorcycleId: String): Flow<List<ReminderEntity>> =
         dao.getRemindersForMotorcycle(motorcycleId)
+    suspend fun getRemindersForMotorcycleList(motorcycleId: String): List<ReminderEntity> =
+        dao.getRemindersForMotorcycleList(motorcycleId)
 
     // --- Activity App Logs ---
     suspend fun logActivity(motorcycleId: String, category: String, title: String, details: String, iconKey: String = "INFO") {
@@ -163,8 +172,11 @@ class MotoGeekRepository(val dao: MotoGeekDao) {
             )
         )
     }
+    suspend fun insertAppLogs(appLogs: List<AppLogEntity>) { dao.insertAppLogs(appLogs) }
     fun getAppLogsForMotorcycle(motorcycleId: String): Flow<List<AppLogEntity>> =
         dao.getAppLogsForMotorcycle(motorcycleId)
+    suspend fun getAppLogsForMotorcycleList(motorcycleId: String): List<AppLogEntity> =
+        dao.getAppLogsForMotorcycleList(motorcycleId)
     suspend fun deleteAppLog(logId: String) { dao.deleteAppLog(logId) }
     suspend fun clearAppLogs(motorcycleId: String) { dao.clearAppLogs(motorcycleId) }
 

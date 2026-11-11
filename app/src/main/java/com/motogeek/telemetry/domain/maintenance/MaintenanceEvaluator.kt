@@ -4,6 +4,7 @@ import com.motogeek.telemetry.data.local.MaintenanceTaskEntity
 import com.motogeek.telemetry.data.local.MotorcycleEntity
 import com.motogeek.telemetry.data.local.ServiceLogEntity
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import kotlin.math.max
 
@@ -21,6 +22,28 @@ data class MaintenanceTaskStatus(
 
 class MaintenanceEvaluator {
 
+    companion object {
+        private val SUPPORTED_FORMATTERS = listOf(
+            DateTimeFormatter.ISO_LOCAL_DATE,
+            DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+            DateTimeFormatter.ofPattern("dd.MM.yyyy"),
+            DateTimeFormatter.ofPattern("MM/dd/yyyy")
+        )
+
+        fun parseFlexibleLocalDate(raw: String?, fallback: LocalDate): LocalDate {
+            val trimmed = raw?.trim().orEmpty()
+            if (trimmed.isEmpty()) return fallback
+            val datePart = trimmed.substringBefore('T').substringBefore(' ')
+            for (formatter in SUPPORTED_FORMATTERS) {
+                try {
+                    return LocalDate.parse(datePart, formatter)
+                } catch (_: Exception) {
+                }
+            }
+            return fallback
+        }
+    }
+
     fun evaluate(
         motorcycle: MotorcycleEntity,
         tasks: List<MaintenanceTaskEntity>,
@@ -37,7 +60,6 @@ class MaintenanceEvaluator {
 
             var nextDueKm: Double? = null
             var remainingKm: Double? = null
-            var nextDueDays: Long? = null
             var remainingDays: Long? = null
 
             // Mileage based logic
@@ -53,8 +75,10 @@ class MaintenanceEvaluator {
             }
 
             // Time based logic
-            if (task.intervalMonths != null) {
-                val lastDate = lastLog?.let { LocalDate.parse(it.performedAtIsoDate) } ?: currentDate.minusMonths(task.intervalMonths.toLong())
+            if (task.intervalMonths != null && task.intervalMonths > 0) {
+                val lastDate = lastLog?.let {
+                    parseFlexibleLocalDate(it.performedAtIsoDate, currentDate)
+                } ?: parseFlexibleLocalDate(motorcycle.startDateIso, currentDate)
                 val nextDueDate = lastDate.plusMonths(task.intervalMonths.toLong())
                 remainingDays = ChronoUnit.DAYS.between(currentDate, nextDueDate)
             }
@@ -75,16 +99,23 @@ class MaintenanceEvaluator {
             }
 
             // Progress fraction for UI (0.0 = just serviced, 1.0 = due)
-            var progress = 0f
-            if (remainingKm != null && task.intervalKm != null) {
+            var kmProgress = 0f
+            if (remainingKm != null && task.intervalKm != null && task.intervalKm > 0) {
                 val p = 1f - (remainingKm / task.intervalKm).toFloat()
-                progress = max(0f, p)
-            } else if (remainingKm != null && task.firstBreakInAtKm != null && lastLog == null) {
+                if (p.isFinite()) kmProgress = max(0f, p)
+            } else if (remainingKm != null && task.firstBreakInAtKm != null && task.firstBreakInAtKm > 0 && lastLog == null) {
                 val p = 1f - (remainingKm / task.firstBreakInAtKm).toFloat()
-                progress = max(0f, p)
+                if (p.isFinite()) kmProgress = max(0f, p)
             }
 
-            if (progress > 1f) progress = 1f
+            var timeProgress = 0f
+            if (remainingDays != null && task.intervalMonths != null && task.intervalMonths > 0) {
+                val totalDays = task.intervalMonths * 30.4375f
+                val p = 1f - (remainingDays.toFloat() / totalDays)
+                if (p.isFinite()) timeProgress = max(0f, p)
+            }
+
+            val progress = max(kmProgress, timeProgress).coerceIn(0f, 1f)
 
             MaintenanceTaskStatus(
                 task = task,

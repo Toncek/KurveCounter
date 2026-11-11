@@ -10,6 +10,7 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.motogeek.telemetry.domain.maintenance.ImportExportManager
+import com.motogeek.telemetry.domain.maintenance.RestoreMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import com.google.android.gms.common.api.Scope
@@ -97,7 +98,7 @@ class GoogleDriveBackupManager(
         }
     }
 
-    suspend fun restoreFromDrive(): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun restoreFromDrive(restoreMode: RestoreMode = RestoreMode.MERGE): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val account = GoogleSignIn.getLastSignedInAccount(context)
             if (account == null) {
@@ -123,7 +124,7 @@ class GoogleDriveBackupManager(
                 drive.files().get(fileId).executeMediaAndDownloadTo(outputStream)
                 outputStream.toString("UTF-8")
             }
-            val result = importExportManager.importGarageBackupFromString(jsonString)
+            val result = importExportManager.importGarageBackupFromString(jsonString, restoreMode)
 
             (result.exceptionOrNull() as? CancellationException)?.let { throw it }
             if (result.isSuccess) {

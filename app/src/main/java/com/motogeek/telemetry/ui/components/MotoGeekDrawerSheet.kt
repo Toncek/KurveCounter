@@ -27,6 +27,8 @@ fun MotoGeekDrawerSheet(
     onBikeSelected: (String) -> Unit,
     onAddNewBike: () -> Unit,
     onSyncOdometer: ((Double) -> Unit)? = null,
+    currentLanguage: AppLang = AppLang.EN,
+    onLanguageToggle: (() -> Unit)? = null,
     currentRoute: String?,
     onNavigate: (String) -> Unit
 ) {
@@ -41,34 +43,55 @@ fun MotoGeekDrawerSheet(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // ApexCarbon TFT Header
+            // ApexCarbon TFT Header + Language Switcher
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 8.dp, top = 4.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp, top = 4.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .width(4.dp)
-                        .height(28.dp)
-                        .background(RacingAmberPrimary, RoundedCornerShape(2.dp))
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
-                    Text(
-                        text = "KURVE // TELEMETRY",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.5.sp
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .height(28.dp)
+                            .background(RacingAmberPrimary, RoundedCornerShape(2.dp))
                     )
-                    Text(
-                        text = "APEX CARBON TFT DASHBOARD",
-                        color = RacingAmberPrimary,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "KURVE // TELEMETRY",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.5.sp
+                        )
+                        Text(
+                            text = tr("APEX CARBON TFT DASHBOARD", "PRÍSTROJOVÝ PANEL APEX CARBON"),
+                            color = RacingAmberPrimary,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp
+                        )
+                    }
+                }
+                if (onLanguageToggle != null) {
+                    OutlinedButton(
+                        onClick = onLanguageToggle,
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Text(
+                            text = if (currentLanguage == AppLang.EN) "EN | SK" else "SK | EN",
+                            color = TelemetryIceCyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
 
@@ -87,42 +110,42 @@ fun MotoGeekDrawerSheet(
             Spacer(modifier = Modifier.height(14.dp))
 
             // SECTION 1: COCKPIT & ANALYTICS
-            DrawerSectionHeader("COCKPIT & ANALYTICS")
-            DrawerTftItem("Home Hub", "home", Icons.Default.Home, currentRoute, onNavigate)
-            DrawerTftItem("Analytics Dashboard", "dashboard", Icons.Default.Dashboard, currentRoute, onNavigate)
-            DrawerTftItem("Live Ride Cockpit", "cockpit", Icons.Default.Speed, currentRoute, onNavigate)
-            DrawerTftItem("Ride History & Heatmaps", "history", Icons.Default.Route, currentRoute, onNavigate)
+            DrawerSectionHeader(tr("COCKPIT & ANALYTICS", "KOKPIT A ANALYTIKA"))
+            DrawerTftItem(tr("Home Hub", "Domov"), "home", Icons.Default.Home, currentRoute, onNavigate)
+            DrawerTftItem(tr("Analytics Dashboard", "Prehľad a náklady (TCO)"), "dashboard", Icons.Default.Dashboard, currentRoute, onNavigate)
+            DrawerTftItem(tr("Live Ride Cockpit", "Živý kokpit jazdy"), "cockpit", Icons.Default.Speed, currentRoute, onNavigate)
+            DrawerTftItem(tr("Ride History & Heatmaps", "História jázd a mapy"), "history", Icons.Default.Route, currentRoute, onNavigate)
 
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = TitaniumBorder.copy(alpha = 0.6f))
             Spacer(modifier = Modifier.height(10.dp))
 
             // SECTION 2: GARAGE & SERVICE
-            DrawerSectionHeader("GARAGE & SERVICE")
-            DrawerTftItem("Bike Profile & Torques", "bike_info", Icons.Default.TwoWheeler, currentRoute, onNavigate)
-            DrawerTftItem("Maintenance Hub (3-Tab)", "maintenance", Icons.Default.Build, currentRoute, onNavigate)
-            DrawerTftItem("Fuel & Consumption", "fuel", Icons.Default.LocalGasStation, currentRoute, onNavigate)
-            DrawerTftItem("Parts & Mods", "parts", Icons.Default.Handyman, currentRoute, onNavigate)
-            DrawerTftItem("Service Reminders", "reminders", Icons.Default.Notifications, currentRoute, onNavigate)
+            DrawerSectionHeader(tr("GARAGE & SERVICE", "GARÁŽ A SERVIS"))
+            DrawerTftItem(tr("Bike Profile & Torques", "Profil motorky a momenty"), "bike_info", Icons.Default.TwoWheeler, currentRoute, onNavigate)
+            DrawerTftItem(tr("Maintenance Hub (3-Tab)", "Servis a údržba (3 karty)"), "maintenance", Icons.Default.Build, currentRoute, onNavigate)
+            DrawerTftItem(tr("Fuel & Consumption", "Tankovanie a spotreba"), "fuel", Icons.Default.LocalGasStation, currentRoute, onNavigate)
+            DrawerTftItem(tr("Parts & Mods", "Diely a úpravy"), "parts", Icons.Default.Handyman, currentRoute, onNavigate)
+            DrawerTftItem(tr("Service Reminders", "Pripomienky"), "reminders", Icons.Default.Notifications, currentRoute, onNavigate)
 
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = TitaniumBorder.copy(alpha = 0.6f))
             Spacer(modifier = Modifier.height(10.dp))
 
             // SECTION 3: DATA & BACKUP
-            DrawerSectionHeader("DATA & BACKUP")
-            DrawerTftItem("Digital Service Book & Export", "export", Icons.Default.FileDownload, currentRoute, onNavigate)
-            DrawerTftItem("JSON & Cloud Backup", "offline_backup", Icons.Default.CloudUpload, currentRoute, onNavigate)
-            DrawerTftItem("AI Manual Extractor & Settings", "settings", Icons.Default.Psychology, currentRoute, onNavigate)
+            DrawerSectionHeader(tr("DATA & BACKUP", "DÁTA A ZÁLOHOVANIE"))
+            DrawerTftItem(tr("Digital Service Book & Export", "Servisná knižka a export"), "export", Icons.Default.FileDownload, currentRoute, onNavigate)
+            DrawerTftItem(tr("JSON & Cloud Backup", "JSON a Cloud záloha"), "offline_backup", Icons.Default.CloudUpload, currentRoute, onNavigate)
+            DrawerTftItem(tr("AI Manual Extractor & Settings", "AI manuál a šablóny"), "settings", Icons.Default.Psychology, currentRoute, onNavigate)
 
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = TitaniumBorder.copy(alpha = 0.6f))
             Spacer(modifier = Modifier.height(10.dp))
 
             // SECTION 4: SYSTEM
-            DrawerSectionHeader("SYSTEM")
-            DrawerTftItem("Activity Timeline (Logs)", "logs", Icons.Default.Article, currentRoute, onNavigate)
-            DrawerTftItem("Sensor Diagnostics & About", "about", Icons.Default.Info, currentRoute, onNavigate)
+            DrawerSectionHeader(tr("SYSTEM", "SYSTÉM"))
+            DrawerTftItem(tr("Activity Timeline (Logs)", "História aktivít (Logy)"), "logs", Icons.Default.Article, currentRoute, onNavigate)
+            DrawerTftItem(tr("Sensor Diagnostics & About", "Diagnostika senzorov a info"), "about", Icons.Default.Info, currentRoute, onNavigate)
 
             Spacer(modifier = Modifier.height(24.dp))
         }

@@ -61,7 +61,8 @@ class MotorcycleSensorFusionEngine(
     fun processImu(
         timestampNanos: Long,
         accelX: Double, accelY: Double, accelZ: Double,
-        gyroX: Double, gyroY: Double, gyroZ: Double
+        gyroX: Double, gyroY: Double, gyroZ: Double,
+        wallClockMs: Long = timestampNanos / 1_000_000L
     ) {
         val dtSec = if (lastImuTimestampNanos > 0) {
             ((timestampNanos - lastImuTimestampNanos) / 1_000_000_000.0).coerceIn(0.001, 0.05)
@@ -89,7 +90,7 @@ class MotorcycleSensorFusionEngine(
         // Physics: A right turn is clockwise seen from above, which is a negative rotation about the Z axis.
         // The convention is a right turn yields positive lean and positive lateral G.
         val yawRateRight = -bikeGz
-        val rollRateDeg = Math.toDegrees(bikeGx) // Note: roll rate sign might need to be adjusted to align with lean depending on how it's used. Since positive roll implies positive lean change, and we want positive lean for right turn, let's keep rollRateDeg as is assuming bikeGx is positive for right lean.
+        val rollRateDeg = Math.toDegrees(bikeGx)
 
         if (calibrator.state == CalibrationState.LOCKED) {
             currentLongitudinalG = (bikeAx / 9.80665).takeIf { it.isFinite() } ?: 0.0
@@ -113,7 +114,8 @@ class MotorcycleSensorFusionEngine(
         rawEstimatedLeanDeg = newLean.takeIf { it.isFinite() } ?: 0.0
         currentLeanAngleDeg = (rawEstimatedLeanDeg - manualLeanOffsetDeg).coerceIn(-70.0, 70.0)
 
-        updateCornerStateMachine(timestampNanos / 1_000_000, rollRateDeg)
+        val safeWallClockMs = if (wallClockMs > 0L) wallClockMs else (timestampNanos / 1_000_000L)
+        updateCornerStateMachine(safeWallClockMs, rollRateDeg)
     }
 
     fun calibrateManualZero() {

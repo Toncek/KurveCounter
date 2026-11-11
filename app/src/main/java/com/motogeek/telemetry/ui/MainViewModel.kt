@@ -10,6 +10,8 @@ import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
 import com.motogeek.telemetry.service.LiveTelemetryState
 import com.motogeek.telemetry.service.RideSimulatorEngine
 import com.motogeek.telemetry.service.TelemetryForegroundService
+import com.motogeek.telemetry.service.TelemetryPreferences
+import com.motogeek.telemetry.ui.theme.AppLang
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -50,6 +52,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val googleDriveBackupManager: com.motogeek.telemetry.domain.backup.GoogleDriveBackupManager
 
     private var lastLoggedServiceId: String? = null
+
+    private val telemetryPrefs = TelemetryPreferences(application)
+    private val _appLanguage = MutableStateFlow(AppLang.fromCode(telemetryPrefs.appLanguageCode))
+    val appLanguage: StateFlow<AppLang> = _appLanguage.asStateFlow()
+
+    fun setAppLanguage(lang: AppLang) {
+        telemetryPrefs.appLanguageCode = lang.code
+        _appLanguage.value = lang
+    }
+
+    fun toggleAppLanguage() {
+        setAppLanguage(_appLanguage.value.next())
+    }
 
     private val _showOnboarding = MutableStateFlow(false)
     val showOnboarding = _showOnboarding.asStateFlow()
@@ -275,10 +290,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun syncOdometerMonotonicallyIfNeeded(motorcycleId: String, loggedOdoKm: Double) {
+        if (!loggedOdoKm.isFinite() || loggedOdoKm <= 0.0) return
+        val bike = repository.getMotorcycleById(motorcycleId) ?: activeMotorcycle.value
+        if (bike != null && bike.id == motorcycleId && loggedOdoKm > bike.totalOdometerKm) {
+            repository.updateOdometerManualOffset(
+                bike.id,
+                loggedOdoKm,
+                bike.baseOdometerKm,
+                bike.accumulatedTrackedKm
+            )
+        }
+    }
+
     // --- CRUD Actions for Garage Data ---
     fun addFuelLog(fuelLog: FuelLogEntity) {
         viewModelScope.launch {
             repository.insertFuelLog(fuelLog)
+            syncOdometerMonotonicallyIfNeeded(fuelLog.motorcycleId, fuelLog.odometerKm)
             repository.logActivity(
                 fuelLog.motorcycleId,
                 "FUEL",
@@ -289,7 +318,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateFuelLog(fuelLog: FuelLogEntity) {
-        viewModelScope.launch { repository.updateFuelLog(fuelLog) }
+        viewModelScope.launch {
+            repository.updateFuelLog(fuelLog)
+            syncOdometerMonotonicallyIfNeeded(fuelLog.motorcycleId, fuelLog.odometerKm)
+        }
     }
 
     fun deleteFuelLog(fuelId: Long) {
@@ -301,6 +333,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addPartLog(partLog: PartLogEntity) {
         viewModelScope.launch {
             repository.insertPartLog(partLog)
+            syncOdometerMonotonicallyIfNeeded(partLog.motorcycleId, partLog.odometerKm)
             repository.logActivity(
                 partLog.motorcycleId,
                 "PARTS",
@@ -311,7 +344,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updatePartLog(partLog: PartLogEntity) {
-        viewModelScope.launch { repository.updatePartLog(partLog) }
+        viewModelScope.launch {
+            repository.updatePartLog(partLog)
+            syncOdometerMonotonicallyIfNeeded(partLog.motorcycleId, partLog.odometerKm)
+        }
     }
 
     fun deletePartLog(partId: Long) {
@@ -323,6 +359,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addServiceLog(serviceLog: ServiceLogEntity) {
         viewModelScope.launch {
             repository.insertServiceLog(serviceLog)
+            syncOdometerMonotonicallyIfNeeded(serviceLog.motorcycleId, serviceLog.odometerAtServiceKm)
             repository.logActivity(
                 serviceLog.motorcycleId,
                 "SERVICE",
@@ -333,11 +370,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateServiceLog(serviceLog: ServiceLogEntity) {
-        viewModelScope.launch { repository.updateServiceLog(serviceLog) }
+        viewModelScope.launch {
+            repository.updateServiceLog(serviceLog)
+            syncOdometerMonotonicallyIfNeeded(serviceLog.motorcycleId, serviceLog.odometerAtServiceKm)
+        }
     }
 
     fun deleteServiceLog(logId: String) {
         viewModelScope.launch { repository.deleteServiceLog(logId) }
+    }
+
+    fun upsertMaintenanceTask(task: MaintenanceTaskEntity) {
+        viewModelScope.launch {
+            repository.insertMaintenanceTask(task)
+        }
+    }
+
+    fun deleteMaintenanceTask(taskId: String, motorcycleId: String) {
+        viewModelScope.launch {
+            repository.deleteMaintenanceTask(taskId, motorcycleId)
+        }
     }
 
     fun addReminder(reminder: ReminderEntity) {
@@ -362,30 +414,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun applyTemplate(template: com.motogeek.telemetry.domain.maintenance.MotorcycleBackupDto) {
+    fun applyTemplate(
+        template: com.motogeek.telemetry.domain.maintenance.MotorcycleBackupDto,
+        applyToActiveBike: Boolean = false
+    ) {
         viewModelScope.launch {
-            val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
-            val bikes = repository.getAllMotorcycles().first()
-            bikes.forEach { repository.deleteMotorcycle(it.id) }
+            val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
+            val currentActive = activeMotorcycle.value
+            val targetBikeId: String
 
-            val bikeEntity = MotorcycleEntity(
-                id = UUID.randomUUID().toString(),
-                make = template.motorcycle.make,
-                model = template.motorcycle.model,
-                year = template.motorcycle.year,
-                engineDisplacementCc = template.motorcycle.engineDisplacementCc,
-                baseOdometerKm = template.motorcycle.baseOdometerKm,
-                accumulatedTrackedKm = template.motorcycle.accumulatedTrackedKm,
-                manualAdjustmentOffsetKm = template.motorcycle.manualAdjustmentOffsetKm,
-                technicalSpecsJson = template.technicalSpecs?.let { json.encodeToString(it) } ?: "{}",
-                isActive = true
-            )
-            repository.insertMotorcycle(bikeEntity)
+            if (applyToActiveBike && currentActive != null) {
+                targetBikeId = currentActive.id
+                val updatedSpecsJson = template.technicalSpecs?.let { json.encodeToString(it) } ?: currentActive.technicalSpecsJson
+                repository.updateMotorcycle(
+                    currentActive.copy(
+                        technicalSpecsJson = updatedSpecsJson
+                    )
+                )
+                repository.logActivity(
+                    targetBikeId,
+                    "SYSTEM",
+                    "Template Specs Applied",
+                    "Applied ${template.motorcycle.make} ${template.motorcycle.model} specs & schedule"
+                )
+            } else {
+                targetBikeId = UUID.randomUUID().toString()
+                repository.clearActiveMotorcycles()
+                val bikeEntity = MotorcycleEntity(
+                    id = targetBikeId,
+                    name = template.motorcycle.name.ifBlank { "${template.motorcycle.make} ${template.motorcycle.model}".trim() },
+                    make = template.motorcycle.make,
+                    model = template.motorcycle.model,
+                    year = template.motorcycle.year,
+                    engineDisplacementCc = template.motorcycle.engineDisplacementCc,
+                    baseOdometerKm = template.motorcycle.baseOdometerKm,
+                    accumulatedTrackedKm = template.motorcycle.accumulatedTrackedKm,
+                    manualAdjustmentOffsetKm = template.motorcycle.manualAdjustmentOffsetKm,
+                    technicalSpecsJson = template.technicalSpecs?.let { json.encodeToString(it) } ?: "{}",
+                    startDateIso = LocalDate.now().format(DateTimeFormatter.ISO_DATE),
+                    isActive = true
+                )
+                repository.insertMotorcycle(bikeEntity)
+                repository.logActivity(
+                    targetBikeId,
+                    "SYSTEM",
+                    "Template Bike Added",
+                    "Added ${bikeEntity.displayName} from factory catalog"
+                )
+            }
 
             val taskEntities = template.maintenanceSchedule.map { task ->
                 MaintenanceTaskEntity(
                     taskId = task.taskId,
-                    motorcycleId = bikeEntity.id,
+                    motorcycleId = targetBikeId,
                     category = task.category,
                     taskName = task.taskName,
                     actionType = task.actionType,

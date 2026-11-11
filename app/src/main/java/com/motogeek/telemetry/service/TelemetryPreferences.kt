@@ -17,4 +17,8 @@ class TelemetryPreferences(context: Context) {
     var manualLeanOffsetDeg: Double
         get() = Double.fromBits(prefs.getLong("manualLeanOffsetDeg", java.lang.Double.doubleToRawLongBits(0.0)))
         set(value) = prefs.edit().putLong("manualLeanOffsetDeg", java.lang.Double.doubleToRawLongBits(value)).apply()
+
+    var appLanguageCode: String
+        get() = prefs.getString("appLanguageCode", "en") ?: "en"
+        set(value) = prefs.edit().putString("appLanguageCode", value).apply()
 }

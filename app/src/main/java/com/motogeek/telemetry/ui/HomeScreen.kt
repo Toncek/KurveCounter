@@ -62,9 +62,9 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
         else -> ApexEmeraldGreen
     }
     val healthText = when {
-        overdueCount > 0 -> "$overdueCount TASK(S) OVERDUE • SERVICE REQUIRED"
-        dueSoonCount > 0 -> "$dueSoonCount TASK(S) DUE SOON • HEALTH: $healthPercent%"
-        else -> "SERVICE HEALTH: $healthPercent% • ALL SYSTEMS OK"
+        overdueCount > 0 -> tr("$overdueCount TASK(S) OVERDUE • SERVICE REQUIRED", "$overdueCount ÚKON(Y) PO TERMÍNE • VYŽADUJE SERVIS")
+        dueSoonCount > 0 -> tr("$dueSoonCount TASK(S) DUE SOON • HEALTH: $healthPercent%", "$dueSoonCount ÚKON(Y) ČOSKORO • STAV: $healthPercent%")
+        else -> tr("SERVICE HEALTH: $healthPercent% • ALL SYSTEMS OK", "STAV SERVISU: $healthPercent% • VŠETKO OK")
     }
 
     // Peak lean angles across all recorded rides
@@ -178,7 +178,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                 ) {
                     Column {
                         Text(
-                            text = "LIVE TELEMETRY COCKPIT",
+                            text = tr("LIVE TELEMETRY COCKPIT", "ŽIVÝ TELEMETRICKÝ KOKPIT"),
                             color = Color.White,
                             fontWeight = FontWeight.Black,
                             fontSize = 15.sp,
@@ -186,7 +186,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                             letterSpacing = 1.sp
                         )
                         Text(
-                            text = if (telemetryState.isRiding) "SESSION ACTIVE • RECORDING" else "READY FOR GPS & IMU TRACKING",
+                            text = if (telemetryState.isRiding) tr("SESSION ACTIVE • RECORDING", "JAZDA AKTÍVNA • ZÁZNAM") else tr("READY FOR GPS & IMU TRACKING", "PRIPRAVENÉ NA GPS A IMU ZÁZNAM"),
                             color = if (telemetryState.isRiding) ApexEmeraldGreen else Color.Gray,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
@@ -199,7 +199,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                         border = BorderStroke(1.dp, if (telemetryState.isRiding) ApexEmeraldGreen else RacingAmberPrimary)
                     ) {
                         Text(
-                            text = if (telemetryState.isRiding) "100 HZ LIVE" else "STANDBY",
+                            text = if (telemetryState.isRiding) "100 HZ LIVE" else tr("STANDBY", "PRIPRAVENÉ"),
                             color = if (telemetryState.isRiding) ApexEmeraldGreen else RacingAmberPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
@@ -230,7 +230,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "LAUNCH COCKPIT",
+                            text = tr("LAUNCH COCKPIT", "SPUSTIŤ KOKPIT"),
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
@@ -247,7 +247,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                         modifier = Modifier.height(44.dp)
                     ) {
                         Text(
-                            text = "SIMULATE",
+                            text = tr("SIMULATE", "DEMO JAZDA"),
                             color = Color.LightGray,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
@@ -265,19 +265,19 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             QuickLogButton(
-                label = "+ Fuel",
+                label = tr("+ Fuel", "+ Palivo"),
                 icon = Icons.Default.LocalGasStation,
                 modifier = Modifier.weight(1f)
             ) { navController.navigate("fuel") }
 
             QuickLogButton(
-                label = "+ Service",
+                label = tr("+ Service", "+ Servis"),
                 icon = Icons.Default.Handyman,
                 modifier = Modifier.weight(1f)
             ) { navController.navigate("maintenance") }
 
             QuickLogButton(
-                label = "+ Part",
+                label = tr("+ Part", "+ Diel"),
                 icon = Icons.Default.Build,
                 modifier = Modifier.weight(1f)
             ) { navController.navigate("parts") }
@@ -287,7 +287,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
 
         // Management Grid (4 cards, 2x2)
         Text(
-            text = "GARAGE & TELEMETRY MODULES",
+            text = tr("GARAGE & TELEMETRY MODULES", "MODULY GARÁŽE A TELEMETRIE"),
             color = Color(0xFF6B7A99),
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
@@ -301,16 +301,16 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             BentoGridCard(
-                title = "Analytics & TCO",
-                subtitle = "Cost & ride insights",
+                title = tr("Analytics & TCO", "Analytika a TCO"),
+                subtitle = tr("Cost & ride insights", "Náklady a štatistiky jázd"),
                 icon = Icons.Default.Dashboard,
                 iconTint = TelemetryIceCyan,
                 modifier = Modifier.weight(1f)
             ) { navController.navigate("dashboard") }
 
             BentoGridCard(
-                title = "AI Manual & Backup",
-                subtitle = "JSON garage export",
+                title = tr("AI Manual & Backup", "AI Manuál a Záloha"),
+                subtitle = tr("JSON garage export", "Záloha garáže a šablóny"),
                 icon = Icons.Default.Psychology,
                 iconTint = RacingAmberPrimary,
                 modifier = Modifier.weight(1f)
@@ -324,16 +324,16 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             BentoGridCard(
-                title = "Reminders & Alerts",
-                subtitle = "${overdueCount + dueSoonCount} alerts pending",
+                title = tr("Reminders & Alerts", "Pripomienky a výstrahy"),
+                subtitle = tr("${overdueCount + dueSoonCount} alerts pending", "${overdueCount + dueSoonCount} aktívnych upozornení"),
                 icon = Icons.Default.Notifications,
                 iconTint = if (overdueCount > 0) RedlineCrimson else WarningGold,
                 modifier = Modifier.weight(1f)
             ) { navController.navigate("reminders") }
 
             BentoGridCard(
-                title = "Specs & Bolt Torques",
-                subtitle = "Factory torque tables",
+                title = tr("Specs & Bolt Torques", "Špecifikácie a momenty"),
+                subtitle = tr("Factory torque tables", "Uťahovacie momenty (Nm)"),
                 icon = Icons.Default.TwoWheeler,
                 iconTint = ApexEmeraldGreen,
                 modifier = Modifier.weight(1f)

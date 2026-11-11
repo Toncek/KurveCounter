@@ -18,6 +18,9 @@ interface MotoGeekDao {
     @Query("DELETE FROM motorcycles WHERE id = :id")
     suspend fun deleteMotorcycle(id: String)
 
+    @Query("DELETE FROM motorcycles")
+    suspend fun deleteAllMotorcycles()
+
     @Query("SELECT * FROM motorcycles")
     fun getAllMotorcycles(): Flow<List<MotorcycleEntity>>
 
@@ -53,6 +56,9 @@ interface MotoGeekDao {
 
     @Query("SELECT * FROM ride_sessions WHERE motorcycleId = :motorcycleId ORDER BY startTimeEpochMs DESC")
     fun getRideSessionsForMotorcycle(motorcycleId: String): Flow<List<RideSessionEntity>>
+
+    @Query("SELECT * FROM ride_sessions WHERE motorcycleId = :motorcycleId ORDER BY startTimeEpochMs DESC")
+    suspend fun getRideSessionsForMotorcycleList(motorcycleId: String): List<RideSessionEntity>
 
     @Query("DELETE FROM ride_sessions WHERE rideId = :rideId")
     suspend fun deleteRideSession(rideId: Long)
@@ -158,12 +164,21 @@ interface MotoGeekDao {
     @Query("SELECT * FROM reminders WHERE motorcycleId = :motorcycleId")
     fun getRemindersForMotorcycle(motorcycleId: String): Flow<List<ReminderEntity>>
 
+    @Query("SELECT * FROM reminders WHERE motorcycleId = :motorcycleId")
+    suspend fun getRemindersForMotorcycleList(motorcycleId: String): List<ReminderEntity>
+
     // --- App Activity Logs ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAppLog(appLog: AppLogEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAppLogs(appLogs: List<AppLogEntity>)
+
     @Query("SELECT * FROM app_logs WHERE motorcycleId = :motorcycleId ORDER BY timestampEpochMs DESC")
     fun getAppLogsForMotorcycle(motorcycleId: String): Flow<List<AppLogEntity>>
+
+    @Query("SELECT * FROM app_logs WHERE motorcycleId = :motorcycleId ORDER BY timestampEpochMs DESC")
+    suspend fun getAppLogsForMotorcycleList(motorcycleId: String): List<AppLogEntity>
 
     @Query("DELETE FROM app_logs WHERE logId = :logId")
     suspend fun deleteAppLog(logId: String)
@@ -181,6 +196,10 @@ interface MotoGeekDao {
     @Query("SELECT SUM(totalCost) FROM fuel_logs WHERE motorcycleId = :motorcycleId")
     suspend fun getTotalFuelCost(motorcycleId: String): Double?
 
-    @Query("SELECT SUM(liters) * 100.0 / SUM(odometerKm) FROM fuel_logs WHERE motorcycleId = :motorcycleId AND odometerKm > 0")
+    @Query(
+        "SELECT CASE WHEN (MAX(odometerKm) - MIN(odometerKm)) > 0 " +
+        "THEN (SUM(liters) - (SELECT f2.liters FROM fuel_logs f2 WHERE f2.motorcycleId = :motorcycleId AND f2.odometerKm > 0 ORDER BY f2.odometerKm ASC LIMIT 1)) * 100.0 / (MAX(odometerKm) - MIN(odometerKm)) " +
+        "ELSE 0.0 END FROM fuel_logs WHERE motorcycleId = :motorcycleId AND odometerKm > 0"
+    )
     fun getAvgFuelConsumption(motorcycleId: String): Flow<Double?>
 }

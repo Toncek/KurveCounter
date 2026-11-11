@@ -70,8 +70,15 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     private var maxAccelG: Double = 0.0
     private var maxLateralG: Double = 0.0
 
+    private val bufferLock = Any()
     private val trackPointBuffer = mutableListOf<TelemetryTrackPointEntity>()
     private val cornerEventBuffer = mutableListOf<CornerEventEntity>()
+    private val sessionCorners = mutableListOf<CornerEventEntity>()
+
+    private var smoothedBaroAltitudeMeters: Double? = null
+    private var lastReferenceAltitudeMeters: Double? = null
+    private var accumulatedElevationGainMeters: Double = 0.0
+    private var hasBarometerSample: Boolean = false
 
     private var dbFlushJob: Job? = null
     private var uiUpdateJob: Job? = null
@@ -98,8 +105,11 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         repository = MotoGeekRepository(MotoGeekDatabase.getDatabase(this).motoGeekDao())
 
         fusionEngine = MotorcycleSensorFusionEngine { event ->
-            val updatedEvent = event.copy(rideId = activeRideId)
-            cornerEventBuffer.add(updatedEvent)
+            synchronized(bufferLock) {
+                val updatedEvent = event.copy(rideId = activeRideId)
+                cornerEventBuffer.add(updatedEvent)
+                sessionCorners.add(updatedEvent)
+            }
         }
 
         createNotificationChannel()
@@ -127,13 +137,26 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     private fun syncPrefs() {
         val prefs = TelemetryPreferences(this)
         _state.update { it.copy(autoStartAbove5Kmh = prefs.autoStartAbove5Kmh, startOnBoot = prefs.startOnBoot) }
+        if (!_state.value.isRiding && !isMonitoringStandby) {
+            stopSelf()
+        }
     }
 
     private fun calibrateZero() {
-        manualLeanOffsetDeg = fusionEngine.currentLeanAngleDeg
+        fusionEngine.calibrateManualZero()
+        manualLeanOffsetDeg = fusionEngine.manualLeanOffsetDeg
         TelemetryPreferences(this).manualLeanOffsetDeg = manualLeanOffsetDeg
         resetPeaksInternal()
-        _state.update { it.copy(calibrationStatus = "MANUAL 0° LOCKED", manualLeanOffsetDeg = manualLeanOffsetDeg) }
+        _state.update {
+            it.copy(
+                calibrationStatus = "MANUAL 0° LOCKED",
+                manualLeanOffsetDeg = manualLeanOffsetDeg,
+                leanAngleDeg = 0.0
+            )
+        }
+        if (!_state.value.isRiding && !isMonitoringStandby) {
+            stopSelf()
+        }
     }
 
     private fun startMonitoringStandby() {
@@ -141,6 +164,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         isMonitoringStandby = true
         val prefs = TelemetryPreferences(this)
         manualLeanOffsetDeg = prefs.manualLeanOffsetDeg
+        fusionEngine.setManualLeanOffset(manualLeanOffsetDeg)
         _state.update { it.copy(isMonitoringStandby = true, manualLeanOffsetDeg = manualLeanOffsetDeg, autoStartAbove5Kmh = prefs.autoStartAbove5Kmh, startOnBoot = prefs.startOnBoot) }
         
         startForegroundServiceWithNotification(isStandby = true)
@@ -156,8 +180,12 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         _state.update { it.copy(isMonitoringStandby = false) }
 
         sensorManager.unregisterListener(this)
-        sensorThread.quitSafely()
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        if (::sensorThread.isInitialized) {
+            sensorThread.quitSafely()
+        }
+        if (::locationCallback.isInitialized) {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
 
         uiUpdateJob?.cancel()
         if (::wakeLock.isInitialized && wakeLock.isHeld) {
@@ -172,7 +200,8 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         if (_state.value.isRiding) return
         motorcycleId = bikeId
         startTimeMs = System.currentTimeMillis()
-        
+        activeRideId = 0L
+
         if (!isMonitoringStandby) {
             val prefs = TelemetryPreferences(this)
             manualLeanOffsetDeg = prefs.manualLeanOffsetDeg
@@ -181,6 +210,10 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         accumulatedDistanceKm = 0.0
         timePausedMs = 0L
         isPaused = false
+        lastLocation = null
+
+        fusionEngine.reset()
+        fusionEngine.setManualLeanOffset(manualLeanOffsetDeg)
 
         // Reset stats
         maxSpeedKmh = 0.0
@@ -189,8 +222,16 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         maxBrakingG = 0.0
         maxAccelG = 0.0
         maxLateralG = 0.0
-        trackPointBuffer.clear()
-        cornerEventBuffer.clear()
+        smoothedBaroAltitudeMeters = null
+        lastReferenceAltitudeMeters = null
+        accumulatedElevationGainMeters = 0.0
+        hasBarometerSample = false
+
+        synchronized(bufferLock) {
+            trackPointBuffer.clear()
+            cornerEventBuffer.clear()
+            sessionCorners.clear()
+        }
 
         // Persist initial Ride Session
         lifecycleScope.launch(Dispatchers.IO) {
@@ -216,7 +257,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 }
             motorcycleId = resolvedBikeId
 
-            activeRideId = repository.insertRideSession(
+            val insertedRideId = repository.insertRideSession(
                 RideSessionEntity(
                     motorcycleId = resolvedBikeId,
                     startTimeEpochMs = startTimeMs,
@@ -239,6 +280,24 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                     ridingStyleBadge = "UNKNOWN"
                 )
             )
+            synchronized(bufferLock) {
+                activeRideId = insertedRideId
+                for (i in trackPointBuffer.indices) {
+                    if (trackPointBuffer[i].rideId == 0L) {
+                        trackPointBuffer[i] = trackPointBuffer[i].copy(rideId = insertedRideId)
+                    }
+                }
+                for (i in cornerEventBuffer.indices) {
+                    if (cornerEventBuffer[i].rideId == 0L) {
+                        cornerEventBuffer[i] = cornerEventBuffer[i].copy(rideId = insertedRideId)
+                    }
+                }
+                for (i in sessionCorners.indices) {
+                    if (sessionCorners[i].rideId == 0L) {
+                        sessionCorners[i] = sessionCorners[i].copy(rideId = insertedRideId)
+                    }
+                }
+            }
         }
 
         _state.update { it.copy(isRiding = true, isMonitoringStandby = false, calibrationStatus = if (manualLeanOffsetDeg != 0.0) "MANUAL 0° LOCKED" else "CALIBRATING POCKET MODE") }
@@ -312,7 +371,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         val samplingPeriodUs = 10_000 // 100 Hz
         accelerometer?.let { sensorManager.registerListener(this, it, samplingPeriodUs, sensorHandler) }
         gyroscope?.let { sensorManager.registerListener(this, it, samplingPeriodUs, sensorHandler) }
-        barometer?.let { sensorManager.registerListener(this, it, samplingPeriodUs, sensorHandler) }
+        barometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI, sensorHandler) }
     }
 
     private fun requestLocationUpdates() {
@@ -341,10 +400,32 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
     }
 
+    private fun updateElevationClimb(altitudeMeters: Double) {
+        if (!altitudeMeters.isFinite()) return
+        val prevRef = lastReferenceAltitudeMeters
+        if (prevRef == null) {
+            lastReferenceAltitudeMeters = altitudeMeters
+            return
+        }
+        val delta = altitudeMeters - prevRef
+        if (delta >= 1.5) {
+            accumulatedElevationGainMeters += delta
+            lastReferenceAltitudeMeters = altitudeMeters
+        } else if (delta <= -1.5) {
+            lastReferenceAltitudeMeters = altitudeMeters
+        }
+    }
+
     private fun processLocationUpdate(location: Location) {
         if (_state.value.isRiding) {
             if (lastLocation != null) {
-                accumulatedDistanceKm += lastLocation!!.distanceTo(location) / 1000.0
+                val distMeters = lastLocation!!.distanceTo(location).toDouble()
+                if (distMeters.isFinite() && distMeters >= 0.0) {
+                    accumulatedDistanceKm += distMeters / 1000.0
+                }
+            }
+            if (!hasBarometerSample && location.hasAltitude()) {
+                updateElevationClimb(location.altitude)
             }
         }
         lastLocation = location
@@ -356,6 +437,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
 
         if (_state.value.isRiding) {
+            val resolvedAlt = smoothedBaroAltitudeMeters ?: location.altitude
             val tp = TelemetryTrackPointEntity(
                 rideId = activeRideId,
                 timestampMs = System.currentTimeMillis(),
@@ -365,15 +447,17 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 leanAngleDeg = fusionEngine.currentLeanAngleDeg,
                 longitudinalG = fusionEngine.currentLongitudinalG,
                 lateralG = fusionEngine.currentLateralG,
-                altitudeMeters = location.altitude
+                altitudeMeters = resolvedAlt.takeIf { it.isFinite() } ?: 0.0
             )
-            trackPointBuffer.add(tp)
+            synchronized(bufferLock) {
+                trackPointBuffer.add(tp)
+            }
         }
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null || isPaused) return
-        val ts = System.currentTimeMillis()
+        val wallClockMs = System.currentTimeMillis()
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
                 lastAccelX = event.values[0].toDouble()
@@ -381,15 +465,35 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 lastAccelZ = event.values[2].toDouble()
 
                 fusionEngine.processImu(
-                    ts,
-                    lastAccelX, lastAccelY, lastAccelZ,
-                    lastGyroX, lastGyroY, lastGyroZ
+                    timestampNanos = event.timestamp,
+                    accelX = lastAccelX,
+                    accelY = lastAccelY,
+                    accelZ = lastAccelZ,
+                    gyroX = lastGyroX,
+                    gyroY = lastGyroY,
+                    gyroZ = lastGyroZ,
+                    wallClockMs = wallClockMs
                 )
             }
             Sensor.TYPE_GYROSCOPE -> {
                 lastGyroX = event.values[0].toDouble()
                 lastGyroY = event.values[1].toDouble()
                 lastGyroZ = event.values[2].toDouble()
+            }
+            Sensor.TYPE_PRESSURE -> {
+                val pressureHpa = event.values[0]
+                if (pressureHpa.isFinite() && pressureHpa > 100f) {
+                    val rawAlt = SensorManager.getAltitude(SensorManager.PRESSURE_STANDARD_ATMOSPHERE, pressureHpa).toDouble()
+                    if (rawAlt.isFinite()) {
+                        hasBarometerSample = true
+                        val currentSmoothed = smoothedBaroAltitudeMeters
+                        val nextSmoothed = if (currentSmoothed == null) rawAlt else (0.85 * currentSmoothed + 0.15 * rawAlt)
+                        smoothedBaroAltitudeMeters = nextSmoothed
+                        if (_state.value.isRiding) {
+                            updateElevationClimb(nextSmoothed)
+                        }
+                    }
+                }
             }
         }
     }
@@ -417,8 +521,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private fun updateState() {
-        var lean = fusionEngine.currentLeanAngleDeg - manualLeanOffsetDeg
-        lean = lean.coerceIn(-70.0, 70.0)
+        val lean = fusionEngine.currentLeanAngleDeg.coerceIn(-70.0, 70.0)
         
         if (lean > 0) maxLeanRight = max(maxLeanRight, lean)
         else maxLeanLeft = max(maxLeanLeft, abs(lean))
@@ -429,7 +532,9 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         maxLateralG = max(maxLateralG, abs(fusionEngine.currentLateralG))
 
         val durationSec = (System.currentTimeMillis() - startTimeMs - timePausedMs) / 1000
-        val avgSpeed = if (durationSec > 0) accumulatedDistanceKm / (durationSec / 3600.0) else 0.0
+        val avgSpeed = if (durationSec > 0) {
+            (accumulatedDistanceKm / (durationSec / 3600.0)).takeIf { it.isFinite() } ?: 0.0
+        } else 0.0
 
         _state.update {
             it.copy(
@@ -451,14 +556,25 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private suspend fun flushBuffersToDatabase() {
-        val pointsToInsert = trackPointBuffer.toList()
-        trackPointBuffer.clear()
+        val pointsToInsert: List<TelemetryTrackPointEntity>
+        val eventsToInsert: List<CornerEventEntity>
+
+        synchronized(bufferLock) {
+            if (activeRideId == 0L) return
+            pointsToInsert = trackPointBuffer.map {
+                if (it.rideId == 0L) it.copy(rideId = activeRideId) else it
+            }
+            trackPointBuffer.clear()
+
+            eventsToInsert = cornerEventBuffer.map {
+                if (it.rideId == 0L) it.copy(rideId = activeRideId) else it
+            }
+            cornerEventBuffer.clear()
+        }
+
         if (pointsToInsert.isNotEmpty()) {
             repository.insertTelemetryTrackPoints(pointsToInsert)
         }
-
-        val eventsToInsert = cornerEventBuffer.toList()
-        cornerEventBuffer.clear()
         if (eventsToInsert.isNotEmpty()) {
             repository.insertCornerEvents(eventsToInsert)
         }
@@ -489,6 +605,9 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         maxBrakingG = 0.0
         maxLateralG = 0.0
         _state.update { it.copy(peakLeanLeftDeg = 0.0, peakLeanRightDeg = 0.0) }
+        if (!_state.value.isRiding && !isMonitoringStandby) {
+            stopSelf()
+        }
     }
 
     private fun stopRide() {
@@ -499,8 +618,12 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
 
         sensorManager.unregisterListener(this)
-        sensorThread.quitSafely()
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        if (::sensorThread.isInitialized) {
+            sensorThread.quitSafely()
+        }
+        if (::locationCallback.isInitialized) {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
 
         dbFlushJob?.cancel()
         uiUpdateJob?.cancel()
@@ -510,9 +633,25 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
 
             // Finalize Ride Session
             val durationSec = (System.currentTimeMillis() - startTimeMs - timePausedMs) / 1000
-            val avgSpeed = if (durationSec > 0) accumulatedDistanceKm / (durationSec / 3600.0) else 0.0
+            val avgSpeed = if (durationSec > 0) {
+                (accumulatedDistanceKm / (durationSec / 3600.0)).takeIf { it.isFinite() } ?: 0.0
+            } else 0.0
 
-            val badge = fusionEngine.classifyRidingStyle(avgG = (maxBrakingG + maxAccelG + maxLateralG) / 3, maxLean = max(maxLeanLeft, maxLeanRight))
+            val recordedCorners = synchronized(bufferLock) { sessionCorners.toList() }
+            val maxTurnInRate = recordedCorners.maxOfOrNull { it.maxRollRateDegPerSec }?.takeIf { it.isFinite() } ?: 0.0
+            val avgScore = if (recordedCorners.isNotEmpty()) {
+                recordedCorners.map { it.cornerScore }.average().takeIf { it.isFinite() } ?: 0.0
+            } else 0.0
+            val trailBrakingPct = if (recordedCorners.isNotEmpty()) {
+                val countWithTrailBrake = recordedCorners.count { it.peakBrakingG <= -0.12 }
+                ((countWithTrailBrake.toDouble() / recordedCorners.size) * 100.0).takeIf { it.isFinite() } ?: 0.0
+            } else 0.0
+            val finalElevationGain = accumulatedElevationGainMeters.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+
+            val badge = fusionEngine.classifyRidingStyle(
+                avgG = (maxBrakingG + maxAccelG + maxLateralG) / 3.0,
+                maxLean = max(maxLeanLeft, maxLeanRight)
+            )
 
             repository.insertRideSession(
                 RideSessionEntity(
@@ -531,16 +670,25 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                     totalCornersCount = fusionEngine.totalCorners,
                     leftCornersCount = fusionEngine.leftCorners,
                     rightCornersCount = fusionEngine.rightCorners,
-                    maxTurnInRateDegPerSec = 0.0, // simplified
-                    trailBrakingScorePct = 0.0, // simplified
-                    avgCornerScore = 0.0, // simplified
-                    elevationGainMeters = 0.0, // simplified
+                    maxTurnInRateDegPerSec = maxTurnInRate,
+                    trailBrakingScorePct = trailBrakingPct,
+                    avgCornerScore = avgScore,
+                    elevationGainMeters = finalElevationGain,
                     ridingStyleBadge = badge
                 )
             )
 
             // Add distance to Motorcycle
-            repository.addAccumulatedTrackedKm(motorcycleId, accumulatedDistanceKm)
+            if (accumulatedDistanceKm > 0.0) {
+                repository.addAccumulatedTrackedKm(motorcycleId, accumulatedDistanceKm)
+            }
+
+            repository.logActivity(
+                motorcycleId = motorcycleId,
+                category = "RIDE",
+                title = "Ride Recorded (${String.format("%.1f", accumulatedDistanceKm)} km)",
+                details = "Peak Lean: ${maxLeanLeft.toInt()}°L / ${maxLeanRight.toInt()}°R • ${fusionEngine.totalCorners} corners • Style: $badge"
+            )
 
             _state.update { it.copy(isRiding = false) }
 
@@ -556,9 +704,6 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     companion object {
         fun resetPeaks() {
             _state.update { it.copy(peakLeanLeftDeg = 0.0, peakLeanRightDeg = 0.0) }
-            // Note: In a real app we might also need to reset maxLeanLeft and maxLeanRight variables within the service instance
-            // but since they are private, updating the state will just be overwritten on next update if we don\'t reset them.
-            // We\'d need an intent or a better way to communicate with the service instance to do it properly.
         }
 
         const val ACTION_RESET_PEAKS = "ACTION_RESET_PEAKS"
