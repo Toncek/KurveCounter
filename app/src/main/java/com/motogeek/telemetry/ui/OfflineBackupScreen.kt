@@ -508,7 +508,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
     var isSigningIn by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var isSigningOut by remember { mutableStateOf(false) }
     var accountError by remember { mutableStateOf<String?>(null) }
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
@@ -523,9 +523,53 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
     var isRestoring by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
     var lastCloudBackupTime by remember { mutableStateOf(viewModel.googleDriveBackupManager.lastBackupTimestamp) }
+    var pendingRestoreMode by remember { mutableStateOf(RestoreMode.MERGE) }
 
     LaunchedEffect(googleAccount?.id, googleAccount?.email) {
         lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
+    }
+
+    val createDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            isBackingUp = true
+            scope.launch {
+                accountError = null
+                val res = try {
+                    viewModel.googleDriveBackupManager.saveBackupToPickedUri(uri)
+                } finally {
+                    isBackingUp = false
+                }
+                if (res.isSuccess) {
+                    lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
+                    snackbarHostState?.showSnackbar("Cloud backup successful")
+                } else {
+                    accountError = res.exceptionOrNull()?.message ?: "Backup failed"
+                }
+            }
+        }
+    }
+
+    val openDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            isRestoring = true
+            scope.launch {
+                accountError = null
+                val res = try {
+                    viewModel.googleDriveBackupManager.restoreBackupFromPickedUri(uri, pendingRestoreMode)
+                } finally {
+                    isRestoring = false
+                }
+                if (res.isSuccess) {
+                    snackbarHostState?.showSnackbar("Restore from Drive (${pendingRestoreMode.name}) successful")
+                } else {
+                    accountError = res.exceptionOrNull()?.message ?: "Restore failed"
+                }
+            }
+        }
     }
 
     val authorizationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -538,6 +582,14 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
     }
 
     fun handleCloudFailure(error: Throwable?) {
+        if (error is com.motogeek.telemetry.domain.backup.CloudBackupUriRequiredException) {
+            createDocLauncher.launch("kurvecounter_backup.json")
+            return
+        }
+        if (error is com.motogeek.telemetry.domain.backup.CloudRestoreUriRequiredException) {
+            openDocLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+            return
+        }
         accountError = error?.message ?: "Google Drive operation failed. Please try again."
         val recoveryIntent = (error as? com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException)?.intent
         if (recoveryIntent != null) {
@@ -551,15 +603,14 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
 
     val googleSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         isSigningIn = false
+        if (result.resultCode == android.app.Activity.RESULT_CANCELED) {
+            accountError = "Google sign-in cancelled."
+            return@rememberLauncherForActivityResult
+        }
         try {
-            // Google may return an API error in a cancelled Activity result too.
-            if (result.data == null && result.resultCode != android.app.Activity.RESULT_OK) {
-                accountError = "Google sign-in cancelled."
-            } else {
-                viewModel.googleAuthManager.handleSignInResult(result.data)
-                accountError = null
-                lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
-            }
+            viewModel.googleAuthManager.handleSignInResult(result.data)
+            accountError = null
+            lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
         } catch (e: com.google.android.gms.common.api.ApiException) {
             accountError = when (e.statusCode) {
                 12501 -> "Google sign-in cancelled."
@@ -750,6 +801,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         isRestoring = true
                         scope.launch {
                             accountError = null
+                            pendingRestoreMode = cloudRestoreMode
                             val res = try {
                                 viewModel.googleDriveBackupManager.restoreFromDrive(cloudRestoreMode)
                             } finally {

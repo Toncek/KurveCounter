@@ -1,60 +1,161 @@
-name: Build APK
+name: Build Android APK
 
 on:
-  push:
-    branches:
-      - main
-      - master
-      - Master
-  pull_request:
-    branches:
-      - main
-      - master
-      - Master
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build variant'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+      retention_days:
+        description: 'Artifact retention period (days)'
+        required: false
+        default: '2'
+        type: string
+  schedule:
+    # 8:10 PM Bangkok time (13:10 UTC daily) - Strategy C (Hybrid)
+    - cron: '10 13 * * *'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type || 'scheduled' }}
+  cancel-in-progress: ${{ github.event_name == 'schedule' }}
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
-    env:
-      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Quota Guard (Check Commits Since Last Build)
+        id: quota-guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ vars.DISABLE_SCHEDULED_APK_BUILD }}" = "true" ]; then
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+              echo "### ℹ️ Scheduled Build Disabled" >> "$GITHUB_STEP_SUMMARY"
+              echo "Scheduled daily build was skipped because 'DISABLE_SCHEDULED_APK_BUILD' is set to 'true'." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            LAST_SUCCESS_SHA=$(gh run list \
+              --workflow build-apk.yml \
+              --status success \
+              --branch "${GITHUB_REF_NAME}" \
+              --limit 1 \
+              --json headSha \
+              --jq '.[0].headSha' 2>/dev/null || true)
+
+            echo "Last successful build commit: ${LAST_SUCCESS_SHA:-'None found'}"
+
+            COMMITS=""
+            if [ -n "$LAST_SUCCESS_SHA" ] && git cat-file -e "${LAST_SUCCESS_SHA}^{commit}" 2>/dev/null; then
+              COMMITS=$(git log "${LAST_SUCCESS_SHA}..HEAD" --oneline)
+              CHECK_TYPE="since last successful build (${LAST_SUCCESS_SHA:0:7})"
+            else
+              SINCE_DATE=$(date -u -d '24 hours ago' +'%Y-%m-%dT%H:%M:%SZ')
+              COMMITS=$(git log --since="$SINCE_DATE" --oneline)
+              CHECK_TYPE="in the last 24 hours"
+            fi
+
+            if [ -z "$COMMITS" ]; then
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+              echo "### ℹ️ Daily APK Build Skipped (8:10 PM Bangkok)" >> "$GITHUB_STEP_SUMMARY"
+              echo "No new commits detected ${CHECK_TYPE}. Actions minutes preserved." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            echo "### 🚀 New Commits Detected (${CHECK_TYPE})" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            echo "$COMMITS" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 17
+        if: steps.quota-guard.outputs.should_build == 'true'
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Decode Keystore
-        if: ${{ env.KEYSTORE_BASE64 != '' }}
+      - name: Configure Build Metadata
+        if: steps.quota-guard.outputs.should_build == 'true'
+        env:
+          INPUT_BUILD_TYPE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_type || 'debug' }}
+          INPUT_RETENTION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.retention_days || '2' }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > $GITHUB_WORKSPACE/release-keystore.jks
-          echo "KEYSTORE_FILE=$GITHUB_WORKSPACE/release-keystore.jks" >> $GITHUB_ENV
-          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
-          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
-          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+          echo "BUILD_TYPE=$INPUT_BUILD_TYPE" >> "$GITHUB_ENV"
+          echo "RETENTION_DAYS=$INPUT_RETENTION" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u +'%Y%m%d')" >> "$GITHUB_ENV"
+          version_name="1.0.$RUN_NUMBER"
+          echo "VERSION_NAME=$version_name" >> "$GITHUB_ENV"
+
+      - name: Decode Release Keystore
+        if: steps.quota-guard.outputs.should_build == 'true' && env.BUILD_TYPE == 'release' && secrets.KEYSTORE_BASE64 != ''
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "$GITHUB_WORKSPACE/release-keystore.jks"
+          echo "KEYSTORE_FILE=$GITHUB_WORKSPACE/release-keystore.jks" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
 
       - name: Make gradlew executable
+        if: steps.quota-guard.outputs.should_build == 'true'
         run: chmod +x gradlew
 
-      - name: Build Debug and Release APK
-        run: ./gradlew assembleDebug assembleRelease
+      - name: Build Target APK Variant
+        if: steps.quota-guard.outputs.should_build == 'true'
+        run: |
+          if [ "$BUILD_TYPE" = "release" ]; then
+            ./gradlew assembleRelease
+            APK_SRC=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          else
+            ./gradlew assembleDebug
+            APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
+          fi
+          if [ -z "$APK_SRC" ] || [ ! -f "$APK_SRC" ]; then
+            echo "Error: Generated APK not found at '$APK_SRC'" >&2
+            exit 1
+          fi
+          DEST="kurvecounter-${BUILD_TYPE}-v${VERSION_NAME}-${BUILD_DATE}.apk"
+          cp "$APK_SRC" "$DEST"
+          echo "ARTIFACT_PATH=$DEST" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=kurvecounter-${BUILD_TYPE}-v${VERSION_NAME}-${BUILD_DATE}" >> "$GITHUB_ENV"
 
-      - name: Upload Debug APK
+      - name: Upload APK Artifact
+        if: steps.quota-guard.outputs.should_build == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 2
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_PATH }}
+          retention-days: ${{ fromJSON(env.RETENTION_DAYS) }}
+          if-no-files-found: error
 
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 2
+      - name: Build Summary
+        if: steps.quota-guard.outputs.should_build == 'true'
+        run: |
+          FILESIZE=$(ls -lh "$ARTIFACT_PATH" | awk '{print $5}')
+          echo "### 🚀 KurveCounter APK Build Succeeded" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Artifact Name:** \`${{ env.ARTIFACT_NAME }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Variant:** \`${{ env.BUILD_TYPE }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version:** \`${{ env.VERSION_NAME }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Size:** \`$FILESIZE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Retention:** \`${{ env.RETENTION_DAYS }} days\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Trigger:** \`${{ github.event_name }}\`" >> "$GITHUB_STEP_SUMMARY"
