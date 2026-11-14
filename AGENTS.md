@@ -19,7 +19,7 @@
 ### Handoffs, safety, and verification
 - Check `git status` before work and preserve unrelated user changes. Before switching agents, update `TASK_HANDOFF.md` or a structured task note with objective, source documents, decisions, modified files, current diff/state, tests/results, and remaining work.
 - Never let two agents modify the same working tree concurrently. Independent parallel work requires separate Git worktrees and deliberate review/merge.
-- Keep normal sandbox and approval protections. Do not default to unrestricted/yolo/bypass permissions. Commit only when the user requests or authorizes it; stage only relevant files.
+- Keep normal sandbox and approval protections. Do not default to unrestricted/yolo/bypass permissions. Always commit (staging only task-related files while preserving unrelated user changes) and push to the active remote branch when you finish work, after required verification passes (unless the user explicitly asks to keep changes uncommitted or a repository has no configured remote).
 - Preserve project architecture, domain constraints, documentation hierarchy, build/test commands, and deprecated-design warnings. Run appropriate project checks and report exactly what ran and what did not. Do not run app builds for documentation-only changes without a project-specific reason.
 - Read targeted sections and use `rg` for discovery. Keep responses concise; do not dump code or diffs unless requested.
 
