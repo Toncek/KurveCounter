@@ -12,7 +12,11 @@ import java.util.UUID
 @Serializable
 data class ServiceChecklistItem(
     val name: String,
-    val status: String // "CHECKED", "WARNING", "SKIPPED", or "INSPECT"
+    val status: String, // "DONE", "CHECKED", "WARNING", "SKIPPED", or "INSPECT"
+    val taskId: String? = null,
+    val subActions: List<String> = emptyList(),
+    val note: String = "",
+    val completesTask: Boolean = false
 )
 
 val DefaultServiceChecklistNames = listOf(
@@ -57,16 +61,21 @@ data class ServiceLogEntity(
     val notes: String = "",
     val checklistItemsJson: String = "[]"
 ) {
-    fun parseChecklist(): List<ServiceChecklistItem> {
+    fun parseChecklistOrEmpty(): List<ServiceChecklistItem> {
         return try {
             if (checklistItemsJson.isBlank() || checklistItemsJson == "[]") {
-                DefaultServiceChecklistItems
+                emptyList()
             } else {
                 val json = Json { ignoreUnknownKeys = true; isLenient = true }
                 json.decodeFromString<List<ServiceChecklistItem>>(checklistItemsJson)
             }
         } catch (_: Exception) {
-            DefaultServiceChecklistItems
+            emptyList()
         }
+    }
+
+    fun parseChecklist(): List<ServiceChecklistItem> {
+        val parsed = parseChecklistOrEmpty()
+        return parsed.ifEmpty { DefaultServiceChecklistItems }
     }
 }

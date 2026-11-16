@@ -69,12 +69,27 @@ object MotorcycleTemplateCatalog {
                     "Špecifikácia: Kontrola / výmena vzduchového filtra a vyčistenie airboxu.\n" +
                         "Postup: 1. Nadvihnite nádrž a odskrutkujte veko airboxu. " +
                         "2. Skontrolujte znečistenie vložky filtra; papierový vymeňte, športový vyčistite a naimpregnujte. " +
-                        "3. Vytite vnútro airboxu a vypustite odkalovaciu hadičku odvetrania kľukovky."
+                        "3. Vytrite vnútro airboxu a vypustite odkalovaciu hadičku odvetrania kľukovky."
                 } else {
                     "Specs: Inspect/replace air filter element and clean airbox housing.\n" +
                         "Procedure: 1. Lift or remove fuel tank and unbolt airbox cover. " +
                         "2. Inspect filter pleats for debris or oil saturation; replace paper element or clean/re-oil reusable element. " +
                         "3. Wipe inside of airbox clean and drain crankcase breather catch tube."
+                }
+            }
+            taskName.contains("Pad", ignoreCase = true) || taskName.contains("platnič", ignoreCase = true) || taskName.contains("doštič", ignoreCase = true) -> {
+                val frontCal = specs?.frontCaliperBoltsTorqueNm ?: 35.0
+                val rearCal = specs?.rearCaliperBoltsTorqueNm ?: 27.0
+                if (isSk) {
+                    "Špecifikácia: Predné strmene: $frontCal Nm • Zadný strmeň: $rearCal Nm • Min. hrúbka obloženia: 1.0–1.5 mm.\n" +
+                        "Postup: 1. Demontujte skrutky strmeňa ($frontCal Nm vpredu / $rearCal Nm vzadu) a vyberte staré brzdové platničky. " +
+                        "2. Vyčistite brzdové piestiky čističom bŕzd a zatlačte ich späť do strmeňa. " +
+                        "3. Založte nové doštičky/platničky, dotiahnite skrutky strmeňa na moment a niekoľkokrát stlačte páčku/pedál pred jazdou."
+                } else {
+                    "Specs: Front Caliper Bolts: $frontCal Nm • Rear Caliper Bolts: $rearCal Nm • Min. Pad Thickness: 1.0–1.5 mm.\n" +
+                        "Procedure: 1. Remove caliper mounting bolts ($frontCal Nm front / $rearCal Nm rear) and extract old brake pads. " +
+                        "2. Clean exposed caliper pistons with brake cleaner and carefully push them back into caliper bore. " +
+                        "3. Install new brake pads, torque caliper bolts to spec, and pump brake lever/pedal several times to restore pressure before riding."
                 }
             }
             category.equals("Brakes", ignoreCase = true) || taskName.contains("Brake", ignoreCase = true) || taskName.contains("Brzd", ignoreCase = true) -> {
@@ -144,6 +159,115 @@ object MotorcycleTemplateCatalog {
                         "Procedure: 1. Blow compressed air around spark plug wells before removing ignition coils. " +
                         "2. Remove old plugs and inspect insulator color. " +
                         "3. Verify gap ($gap mm), thread new plugs in by hand to prevent cross-threading, and torque to $torque Nm."
+                }
+            }
+            taskName.contains("Fork", ignoreCase = true) || taskName.contains("Vidlic", ignoreCase = true) -> {
+                val forkOilMl = specs?.forkOilCapacityPerLegMl ?: 450.0
+                val forkOilWt = specs?.forkOilWeight?.takeIf { it.isNotBlank() } ?: "10W"
+                val pinch = specs?.frontPinchBoltsTorqueNm ?: 20.0
+                val axle = specs?.frontAxleTorqueNm ?: 65.0
+                if (isSk) {
+                    "Špecifikácia: Objem vidlicového oleja: $forkOilMl ml/klzák • Viskozita: $forkOilWt • Zaisťovacie skrutky (pinch bolts): $pinch Nm • Predná os: $axle Nm.\n" +
+                        "Postup: 1. Uvoľnite horné zátky vidlice a skrutky okuliarov pred demontážou tlmičov. " +
+                        "2. Vypustite starý vidlicový olej, skontrolujte klzáky a vymeňte guferá a prachovky. " +
+                        "3. Nalejte $forkOilMl ml oleja $forkOilWt, odvzdušnite cartridgovú pumpu a dotiahnite prednú os na $axle Nm (zaisťovacie skrutky $pinch Nm)."
+                } else {
+                    "Specs: Fork Oil Capacity: $forkOilMl ml/leg • Weight: $forkOilWt • Pinch Bolts: $pinch Nm • Front Axle: $axle Nm.\n" +
+                        "Procedure: 1. Loosen top fork cap and triple clamp pinch bolts before removing fork legs. " +
+                        "2. Drain old suspension oil, inspect stanchions for pitting/chips, and replace oil and dust seals. " +
+                        "3. Refill with $forkOilMl ml of $forkOilWt fork oil, pump cartridge to bleed air, and torque axle ($axle Nm) and pinch bolts ($pinch Nm) to spec."
+                }
+            }
+            taskName.contains("Shock", ignoreCase = true) || taskName.contains("Tlmič", ignoreCase = true) -> {
+                val rearAxle = specs?.rearAxleNutTorqueNm ?: 100.0
+                val shockMountTorque = specs?.torquesNm?.get("Rear Shock Mount") ?: specs?.boltTorquesNm?.get("Rear Shock Mount") ?: 44.0
+                if (isSk) {
+                    "Špecifikácia: Uchytenie tlmiča: $shockMountTorque Nm • Zadná os: $rearAxle Nm • Odporúčaný priehyb (sag): 30–40 mm.\n" +
+                        "Postup: 1. Odľahčite zadné koleso podopretím rámu motocykla. " +
+                        "2. Skontrolujte tesnosť piestnice tlmiča a vôľu ložísk prepákovania kyvnej vidlice. " +
+                        "3. Skontrolujte a dotiahnite skrutky uchytenia tlmiča na $shockMountTorque Nm a maticu zadnej osi na $rearAxle Nm."
+                } else {
+                    "Specs: Shock Mount Bolts: $shockMountTorque Nm • Rear Axle Nut: $rearAxle Nm • Recommended Rider Sag: 30–40 mm.\n" +
+                        "Procedure: 1. Support bike securely under frame/engine so rear swingarm is fully unloaded. " +
+                        "2. Inspect shock shaft for fluid leaks and check swingarm linkage bushings for free play. " +
+                        "3. Check and torque shock mount hardware ($shockMountTorque Nm) and rear axle nut ($rearAxle Nm)."
+                }
+            }
+            taskName.contains("Clutch", ignoreCase = true) || taskName.contains("Throttle", ignoreCase = true) ||
+                taskName.contains("Spojk", ignoreCase = true) || taskName.contains("Plyn", ignoreCase = true) -> {
+                val idle = specs?.idleSpeedRpm?.takeIf { it.isNotBlank() } ?: "1,200–1,400 RPM"
+                if (isSk) {
+                    "Špecifikácia: Voľnobežné otáčky: $idle • Vôľa páčky spojky: 2–3 mm • Vôľa rukoväte plynu: 2–4 mm.\n" +
+                        "Postup: 1. Skontrolujte voľný chod spojkovej páčky (2–3 mm) a rukoväte plynu (2–4 mm). " +
+                        "2. Premažte lanká špeciálnym mazivom a preverte plynulý návrat plynu pri plnom vytočení riadidiel v oboch smeroch. " +
+                        "3. Pri naštartovanom motore overte stabilný voľnobeh ($idle) bez samovoľného pridávania pri otáčaní riadidlami."
+                } else {
+                    "Specs: Idle Speed: $idle • Clutch Lever Freeplay: 2–3 mm • Throttle Twistgrip Freeplay: 2–4 mm.\n" +
+                        "Procedure: 1. Inspect and measure freeplay on clutch lever (2–3 mm) and throttle twistgrip (2–4 mm). " +
+                        "2. Lubricate control cables and verify snappy throttle return without binding from steering lock to lock. " +
+                        "3. With engine warm, confirm steady idle ($idle) does not fluctuate when turning handlebars."
+                }
+            }
+            taskName.contains("Steering", ignoreCase = true) || taskName.contains("Krk", ignoreCase = true) -> {
+                val stemNut = specs?.torquesNm?.get("Steering Stem Nut") ?: specs?.boltTorquesNm?.get("Steering Stem Nut") ?: 110.0
+                val pinch = specs?.frontPinchBoltsTorqueNm ?: 20.0
+                if (isSk) {
+                    "Špecifikácia: Matica krku riadenia: $stemNut Nm • Zaisťovacie skrutky vidlice: $pinch Nm.\n" +
+                        "Postup: 1. Zdvihnite predné koleso do vzduchu a overte hladký pohyb riadidiel bez zadrhávania alebo aretácie v strede. " +
+                        "2. Uchopte spodnú časť vidlice a potlačením dopredu a dozadu skontrolujte vôľu v ložiskách riadenia. " +
+                        "3. Pri uvoľnení nastavte predpätie ložísk krku, dotiahnite centrálnu maticu na $stemNut Nm a skrutky okuliarov na $pinch Nm."
+                } else {
+                    "Specs: Steering Stem Nut: $stemNut Nm • Triple Clamp Pinch Bolts: $pinch Nm.\n" +
+                        "Procedure: 1. Lift front wheel off ground and sweep steering lock to lock to check for notches, roughness, or center detent. " +
+                        "2. Rock bottom of fork legs back and forth to check for radial play or clunking in the head tube. " +
+                        "3. Adjust bearing preload if loose, retorque steering stem nut ($stemNut Nm), and torque pinch bolts ($pinch Nm)."
+                }
+            }
+            taskName.contains("Battery", ignoreCase = true) || taskName.contains("Batér", ignoreCase = true) -> {
+                val idle = specs?.idleSpeedRpm?.takeIf { it.isNotBlank() } ?: "1,200–1,400 RPM"
+                if (isSk) {
+                    "Špecifikácia: Pokojové napätie batérie: >12.6 V • Dobíjacie napätie (pri 5 000 RPM): 13.8–14.8 V • Voľnobeh: $idle.\n" +
+                        "Postup: 1. Zmerajte pokojové napätie multimetrom (ak je pod 12.4 V, nabite inteligentnou nabíjačkou). " +
+                        "2. Očistite póly batérie od oxidácie, pevne dotiahnite káblové oká a ošetrite póly vazelínou. " +
+                        "3. Naštartujte motor a overte, že dobíjacie napätie dosiahne 13.8–14.8 V pri zvýšených otáčkach."
+                } else {
+                    "Specs: Battery Resting Voltage: >12.6 V • Charging Voltage (@ 5,000 RPM): 13.8–14.8 V • Idle: $idle.\n" +
+                        "Procedure: 1. Measure resting battery voltage across terminals (>12.6 V = good; <12.4 V indicates recharge needed). " +
+                        "2. Clean battery terminals of any corrosion, torque terminal bolts securely, and apply dielectric grease. " +
+                        "3. Start engine and verify charging system output voltage rises to 13.8–14.8 V at ~5,000 RPM."
+                }
+            }
+            taskName.contains("Light", ignoreCase = true) || taskName.contains("Svetl", ignoreCase = true) -> {
+                val modelName = specs?.motorcycleModel?.takeIf { it.isNotBlank() } ?: "12V System"
+                if (isSk) {
+                    "Špecifikácia: Elektrický systém: $modelName • Napätie: 12 V • Frekvencia smeroviek: 60–120 bliknutí/min.\n" +
+                        "Postup: 1. Skontrolujte funkciu stretávacích, diaľkových a obrysových svetiel. " +
+                        "2. Overte rozsvietenie brzdového svetla pri stlačení prednej páčky aj zadného nožného pedála. " +
+                        "3. Vyskúšajte smerovky na oboch stranách, výstražné svetlá, klaksón a kontrolky na prístrojovej doske."
+                } else {
+                    "Specs: Electrical System: $modelName • Operating Voltage: 12V DC • Flash Rate: 60–120 pulses/min.\n" +
+                        "Procedure: 1. Check headlights (low and high beams), parking lights, and license plate illumination. " +
+                        "2. Verify brake light actuation independently from both front brake lever and rear brake foot pedal. " +
+                        "3. Test turn signals left/right, 4-way hazard flashers, horn, and all dashboard warning indicators."
+                }
+            }
+            taskName.contains("Bolt", ignoreCase = true) || taskName.contains("Fastener", ignoreCase = true) ||
+                taskName.contains("Torque", ignoreCase = true) || taskName.contains("Skrut", ignoreCase = true) -> {
+                val rearAxle = specs?.rearAxleNutTorqueNm ?: 100.0
+                val frontAxle = specs?.frontAxleTorqueNm ?: 65.0
+                val frontCal = specs?.frontCaliperBoltsTorqueNm ?: 35.0
+                val rearCal = specs?.rearCaliperBoltsTorqueNm ?: 27.0
+                val pinch = specs?.frontPinchBoltsTorqueNm ?: 20.0
+                if (isSk) {
+                    "Špecifikácia: Predná os: $frontAxle Nm • Zaisťovacie skrutky: $pinch Nm • Zadná os: $rearAxle Nm • Predné strmene: $frontCal Nm • Zadný strmeň: $rearCal Nm.\n" +
+                        "Postup: 1. Skontrolujte vizuálne a mechanicky všetky kľúčové skrutkové spoje na ráme, podvozku a riadidlách. " +
+                        "2. Momentovým kľúčom overte predpísané momenty: osi kolies ($frontAxle / $rearAxle Nm), strmene ($frontCal / $rearCal Nm) a pinch bolts ($pinch Nm). " +
+                        "3. Vymeňte poškodené spojovacie prvky a na kritické spoje aplikujte odporúčaný zaisťovač závitov (Loctite)."
+                } else {
+                    "Specs: Front Axle: $frontAxle Nm • Pinch Bolts: $pinch Nm • Rear Axle Nut: $rearAxle Nm • Front Calipers: $frontCal Nm • Rear Caliper: $rearCal Nm.\n" +
+                        "Procedure: 1. Visually and mechanically check critical chassis, suspension, engine mount, and handlebar fasteners. " +
+                        "2. Use a calibrated torque wrench to verify specs: axles ($frontAxle Nm front / $rearAxle Nm rear), calipers ($frontCal Nm front / $rearCal Nm rear), and pinch bolts ($pinch Nm). " +
+                        "3. Replace any damaged or corroded hardware and apply threadlocker where specified by service manual."
                 }
             }
             else -> ""

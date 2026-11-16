@@ -53,8 +53,15 @@ class MaintenanceEvaluator {
         val currentOdo = motorcycle.totalOdometerKm
 
         return tasks.map { task ->
-            val taskLogs = logs.filter { it.taskId == task.taskId }
-                .sortedByDescending { it.odometerAtServiceKm }
+            val taskLogs = logs.filter { log ->
+                log.taskId == task.taskId ||
+                    log.parseChecklistOrEmpty().any { item ->
+                        ServiceChecklistCatalog.itemMatchesAndCompletesTask(item, task)
+                    }
+            }.sortedWith(
+                compareByDescending<ServiceLogEntity> { it.odometerAtServiceKm }
+                    .thenByDescending { parseFlexibleLocalDate(it.performedAtIsoDate, LocalDate.MIN) }
+            )
 
             val lastLog = taskLogs.firstOrNull()
 
