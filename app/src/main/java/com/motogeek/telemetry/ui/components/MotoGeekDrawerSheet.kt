@@ -136,7 +136,6 @@ fun MotoGeekDrawerSheet(
             DrawerSectionHeader(tr("DATA & BACKUP", "DÁTA A ZÁLOHOVANIE"))
             DrawerTftItem(tr("Digital Service Book & Export", "Servisná knižka a export"), "export", Icons.Default.FileDownload, currentRoute, onNavigate)
             DrawerTftItem(tr("JSON & Cloud Backup", "JSON a Cloud záloha"), "offline_backup", Icons.Default.CloudUpload, currentRoute, onNavigate)
-            DrawerTftItem(tr("AI Manual Extractor & Settings", "AI manuál a šablóny"), "settings", Icons.Default.Psychology, currentRoute, onNavigate)
 
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = TitaniumBorder.copy(alpha = 0.6f))

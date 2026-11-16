@@ -231,7 +231,7 @@ class MainActivity : ComponentActivity() {
                             composable("history") { TelemetryHistoryScreen(viewModel) }
                             composable("maintenance") { MaintenanceServiceScreen(viewModel, navController) }
                             composable("garage") { BikeInfoScreen(viewModel, navController) }
-                            composable("settings") { OfflineBackupScreen(viewModel, navController) }
+                            composable("settings") { BikeInfoScreen(viewModel, navController) }
                             composable("dashboard") { DashboardScreen(viewModel, navController) }
                             composable("export") { BikeDataExportScreen(viewModel, navController) }
                             composable("about") { AboutAndDiagnosticsScreen(viewModel, navController) }

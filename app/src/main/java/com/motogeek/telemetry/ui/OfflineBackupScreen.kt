@@ -1,8 +1,5 @@
 package com.motogeek.telemetry.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -18,14 +15,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.motogeek.telemetry.domain.maintenance.MotorcycleBackupDto
-import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
 import com.motogeek.telemetry.domain.maintenance.RestoreMode
 import com.motogeek.telemetry.ui.theme.*
 import kotlinx.coroutines.launch
@@ -33,16 +27,12 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val activeBike by viewModel.activeMotorcycle.collectAsState()
 
-    var showPasteDialog by remember { mutableStateOf(false) }
-    var pasteJsonText by remember { mutableStateOf("") }
     var selectedRestoreMode by remember { mutableStateOf(RestoreMode.MERGE) }
     var hasSafetySnapshot by remember { mutableStateOf(viewModel.importExportManager.hasPreRestoreSnapshot()) }
-    var pendingTemplate by remember { mutableStateOf<Pair<String, MotorcycleBackupDto>?>(null) }
 
     // SAF Import Launcher (Supports Local Storage, Google Drive, Nextcloud, Dropbox, etc.)
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -205,27 +195,6 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                         Text("Import JSON Backup File (${selectedRestoreMode.name})", color = Color.White, fontWeight = FontWeight.Bold)
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Paste JSON from Clipboard Button
-                    OutlinedButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clipItem = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
-                            if (!clipItem.isNullOrBlank()) {
-                                pasteJsonText = clipItem
-                            }
-                            showPasteDialog = true
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, TitaniumBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = null, tint = ApexEmeraldGreen, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Paste AI JSON / Clipboard Import", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-
                     if (hasSafetySnapshot) {
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedButton(
@@ -251,255 +220,10 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                 }
             }
 
-            // Section 2: AI Service Manual Prompt Generator
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = TftSurfaceDark),
-                border = BorderStroke(1.dp, TitaniumBorder)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "AI SERVICE MANUAL EXTRACTOR",
-                            color = Color(0xFF6B7A99),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 1.sp
-                        )
-                        Icon(Icons.Default.Psychology, contentDescription = null, tint = RacingAmberPrimary)
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Feed your motorcycle's PDF service manual or workshop book into ChatGPT, Claude, or Gemini using our Master Mechanic prompt" + (activeBike?.let { " tailored for ${it.year} ${it.make} ${it.model}" } ?: "") + ". Copy the resulting JSON and paste it into KurveCounter to auto-populate all service schedules and bolt torques!",
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    val appLang = LocalAppLang.current
-                    Button(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val prompt = viewModel.importExportManager.buildAiServiceManualPrompt(activeBike, appLang.code)
-                            clipboard.setPrimaryClip(ClipData.newPlainText("AI Mechanic Prompt", prompt))
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    if (appLang == AppLang.SK) "AI prompt skopírovaný do schránky!"
-                                    else "AI Master Mechanic Prompt copied to clipboard!"
-                                )
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = TftSurfaceElevated),
-                        border = BorderStroke(1.dp, RacingAmberPrimary),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = RacingAmberPrimary, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Copy AI Master Mechanic Prompt", color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            // Section 3: Built-In Factory Motorcycle Templates
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = TftSurfaceDark),
-                border = BorderStroke(1.dp, TitaniumBorder)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "BUILT-IN MOTORCYCLE TEMPLATES",
-                        color = Color(0xFF6B7A99),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    TemplateTile("Universal Motorcycle", "Standard 5000 km intervals, 4-stroke", onApply = {
-                        pendingTemplate = "Universal Motorcycle" to MotorcycleTemplateCatalog.universal
-                    })
-                    TemplateTile("Yamaha MT-09 / Tracer 9", "CP3 890cc • 10,000 km service • Factory torques", onApply = {
-                        pendingTemplate = "Yamaha MT-09" to MotorcycleTemplateCatalog.mt09
-                    })
-                    TemplateTile("Honda CB650R / CBR650R", "Inline-4 649cc • 12,000 km service intervals", onApply = {
-                        pendingTemplate = "Honda CB650R" to MotorcycleTemplateCatalog.cb650r
-                    })
-                    TemplateTile("BMW R1250GS Boxer", "1254cc ShiftCam • Cardan shaft & valve checks", onApply = {
-                        pendingTemplate = "BMW R1250GS" to MotorcycleTemplateCatalog.r1250gs
-                    })
-                    TemplateTile("KTM 890 Duke / Adventure", "889cc Parallel-Twin • 15,000 km intervals & torques", onApply = {
-                        pendingTemplate = "KTM 890 Duke" to MotorcycleTemplateCatalog.ktm890
-                    })
-                    TemplateTile("Kawasaki Z900", "948cc Inline-4 • 12,000 km intervals & torques", onApply = {
-                        pendingTemplate = "Kawasaki Z900" to MotorcycleTemplateCatalog.z900
-                    })
-                }
-            }
-
             Spacer(modifier = Modifier.height(30.dp))
         }
     }
-
-    pendingTemplate?.let { (label, templateDto) ->
-        AlertDialog(
-            onDismissRequest = { pendingTemplate = null },
-            containerColor = TftSurfaceDark,
-            title = { Text("Apply $label Template?", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    text = if (activeBike != null) {
-                        "Choose whether to apply $label factory specs & schedule to your active motorcycle (${activeBike?.displayName}) or add it as a new motorcycle in your garage."
-                    } else {
-                        "Add $label with factory specs, torques, and maintenance schedule to your garage?"
-                    },
-                    color = Color.LightGray,
-                    fontSize = 13.sp
-                )
-            },
-            confirmButton = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (activeBike != null) {
-                        Button(
-                            onClick = {
-                                viewModel.applyTemplate(templateDto, applyToActiveBike = true)
-                                pendingTemplate = null
-                                scope.launch { snackbarHostState.showSnackbar("Applied $label specs & schedule to ${activeBike?.displayName}!") }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Update Active Bike (${activeBike?.displayName})", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.applyTemplate(templateDto, applyToActiveBike = false)
-                            pendingTemplate = null
-                            scope.launch { snackbarHostState.showSnackbar("Added $label as a new motorcycle!") }
-                        },
-                        border = BorderStroke(1.dp, TelemetryIceCyan),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Add as New Motorcycle", color = TelemetryIceCyan, fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingTemplate = null }) {
-                    Text("Cancel", color = Color.Gray)
-                }
-            }
-        )
-    }
-
-    if (showPasteDialog) {
-        AlertDialog(
-            onDismissRequest = { showPasteDialog = false },
-            containerColor = TftSurfaceDark,
-            title = { Text("Paste AI JSON / Schedule", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text(
-                        text = "Paste the JSON output produced by the LLM from your service manual:",
-                        color = Color.LightGray,
-                        fontSize = 12.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = pasteJsonText,
-                        onValueChange = { pasteJsonText = it },
-                        placeholder = { Text("{\n  \"technicalSpecs\": {...},\n  \"maintenanceSchedule\": [...]\n}", color = Color.DarkGray) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            val res = viewModel.importExportManager.importFromJsonString(
-                                pasteJsonText,
-                                activeBike?.id,
-                                selectedRestoreMode
-                            )
-                            hasSafetySnapshot = viewModel.importExportManager.hasPreRestoreSnapshot()
-                            if (res.isSuccess) {
-                                val s = res.getOrNull()
-                                snackbarHostState.showSnackbar("Successfully imported! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks.")
-                                showPasteDialog = false
-                            } else {
-                                snackbarHostState.showSnackbar("Parsing Failed: ${res.exceptionOrNull()?.message}")
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
-                ) {
-                    Text("Import JSON", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPasteDialog = false }) { Text("Cancel", color = Color.Gray) }
-            }
-        )
-    }
 }
-
-@Composable
-private fun TemplateTile(title: String, subtitle: String, onApply: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(8.dp),
-        color = TftSurfaceElevated,
-        border = BorderStroke(1.dp, TitaniumBorder)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(subtitle, color = Color.Gray, fontSize = 11.sp)
-            }
-            Button(
-                onClick = onApply,
-                colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary.copy(alpha = 0.2f)),
-                border = BorderStroke(1.dp, RacingAmberPrimary),
-                shape = RoundedCornerShape(6.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.height(32.dp)
-            ) {
-                Text("Apply", color = RacingAmberPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
 
 @Composable
 fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: SnackbarHostState?) {
