@@ -3,6 +3,8 @@ package com.motogeek.telemetry.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.motogeek.telemetry.data.local.MotorcycleEntity
+import com.motogeek.telemetry.domain.maintenance.ImportPreviewPlan
+import com.motogeek.telemetry.domain.maintenance.ImportSourceFormat
 import com.motogeek.telemetry.domain.maintenance.MotorcycleBackupDto
 import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
 import com.motogeek.telemetry.domain.maintenance.RestoreMode
@@ -31,6 +35,7 @@ import com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto
 import com.motogeek.telemetry.domain.toSafeDouble
 import com.motogeek.telemetry.domain.toSafeInt
 import com.motogeek.telemetry.ui.components.ActiveBikeDropdownCard
+import com.motogeek.telemetry.ui.components.GuidedImportDialog
 import com.motogeek.telemetry.ui.components.SegmentedDigitalText
 import com.motogeek.telemetry.ui.theme.*
 import kotlinx.coroutines.launch
@@ -45,6 +50,26 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val appLang = LocalAppLang.current
+
+    var pendingGuidedPlan by remember { mutableStateOf<ImportPreviewPlan?>(null) }
+    var isImportingGuidedPlan by remember { mutableStateOf(false) }
+
+    val jsonFileImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val res = viewModel.importExportManager.analyzeJsonFile(uri)
+                if (res.isSuccess) {
+                    pendingGuidedPlan = res.getOrNull()
+                } else {
+                    snackbarHostState.showSnackbar(
+                        if (appLang == AppLang.SK) "Chyba analýzy JSON súboru: ${res.exceptionOrNull()?.message}"
+                        else "Failed to analyze JSON file: ${res.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+        }
+    }
 
     var name by remember(activeBike) { mutableStateOf(activeBike?.name ?: "") }
     var type by remember(activeBike) { mutableStateOf(activeBike?.type ?: "Naked") }
@@ -526,7 +551,6 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    val appLang = LocalAppLang.current
                     Button(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -568,6 +592,24 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         Icon(Icons.Default.ContentPaste, contentDescription = null, tint = ApexEmeraldGreen, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Paste AI JSON / Clipboard Import", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Import JSON File (MyBikes / Backup / AI)
+                    OutlinedButton(
+                        onClick = { jsonFileImportLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, TitaniumBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.FileOpen, contentDescription = null, tint = TelemetryIceCyan, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = tr("Import JSON File (MyBikes / Backup / AI)", "Importovať JSON súbor (MyBikes / Záloha / AI)"),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -713,27 +755,81 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                 Button(
                     onClick = {
                         scope.launch {
-                            val res = viewModel.importExportManager.importFromJsonString(
-                                pasteJsonText,
-                                activeBike?.id,
-                                RestoreMode.MERGE
-                            )
-                            if (res.isSuccess) {
-                                val s = res.getOrNull()
-                                snackbarHostState.showSnackbar("Successfully imported! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks.")
+                            val planResult = viewModel.importExportManager.analyzeJsonString(pasteJsonText)
+                            val plan = planResult.getOrNull()
+                            if (plan != null && (plan.format == ImportSourceFormat.MYBIKES_EXPORT || plan.format == ImportSourceFormat.KURVE_GARAGE_BACKUP)) {
                                 showPasteDialog = false
+                                pendingGuidedPlan = plan
                             } else {
-                                snackbarHostState.showSnackbar("Parsing Failed: ${res.exceptionOrNull()?.message}")
+                                val res = viewModel.importExportManager.importFromJsonString(
+                                    pasteJsonText,
+                                    activeBike?.id,
+                                    RestoreMode.MERGE
+                                )
+                                if (res.isSuccess) {
+                                    val s = res.getOrNull()
+                                    snackbarHostState.showSnackbar(
+                                        if (appLang == AppLang.SK)
+                                            "Úspešne naimportované! ${s?.motorcyclesImported ?: 0} motocyklov, ${s?.tasksImported ?: 0} úloh."
+                                        else
+                                            "Successfully imported! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks."
+                                    )
+                                    showPasteDialog = false
+                                } else {
+                                    snackbarHostState.showSnackbar(
+                                        if (appLang == AppLang.SK)
+                                            "Spracovanie zlyhalo: ${res.exceptionOrNull()?.message}"
+                                        else
+                                            "Parsing Failed: ${res.exceptionOrNull()?.message}"
+                                    )
+                                }
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
                 ) {
-                    Text("Import JSON", fontWeight = FontWeight.Bold)
+                    Text(tr("Import JSON", "Importovať JSON"), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showPasteDialog = false }) { Text("Cancel", color = Color.Gray) }
+                TextButton(onClick = { showPasteDialog = false }) { Text(tr("Cancel", "Zrušiť"), color = Color.Gray) }
+            }
+        )
+    }
+
+    if (pendingGuidedPlan != null) {
+        GuidedImportDialog(
+            plan = pendingGuidedPlan!!,
+            existingBikes = allBikes,
+            isImporting = isImportingGuidedPlan,
+            onDismiss = { pendingGuidedPlan = null },
+            onConfirm = { selection ->
+                scope.launch {
+                    isImportingGuidedPlan = true
+                    val result = viewModel.importExportManager.executeGuidedImport(
+                        plan = pendingGuidedPlan!!,
+                        selection = selection,
+                        langCode = appLang.code
+                    )
+                    isImportingGuidedPlan = false
+                    pendingGuidedPlan = null
+                    if (result.isSuccess) {
+                        val s = result.getOrNull()
+                        snackbarHostState.showSnackbar(
+                            if (appLang == AppLang.SK)
+                                "Import dokončený: ${s?.motorcyclesImported ?: 0} motocyklov, ${s?.tasksImported ?: 0} úloh, ${s?.logsImported ?: 0} servisov, ${s?.fuelLogsImported ?: 0} tankovaní, ${s?.ridesImported ?: 0} jázd."
+                            else
+                                "Import Successful! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks, ${s?.logsImported ?: 0} service logs, ${s?.fuelLogsImported ?: 0} fuel logs, ${s?.ridesImported ?: 0} rides."
+                        )
+                    } else {
+                        snackbarHostState.showSnackbar(
+                            if (appLang == AppLang.SK)
+                                "Chyba importu: ${result.exceptionOrNull()?.message}"
+                            else
+                                "Import Error: ${result.exceptionOrNull()?.message}"
+                        )
+                    }
+                }
             }
         )
     }

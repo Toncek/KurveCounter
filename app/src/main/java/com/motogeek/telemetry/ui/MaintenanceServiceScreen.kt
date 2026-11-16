@@ -68,6 +68,19 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(activeBike?.id) {
+        val bikeId = activeBike?.id ?: return@LaunchedEffect
+        val merged = viewModel.repository.deduplicateMaintenanceTasksForBike(bikeId)
+        if (merged > 0) {
+            val message = if (appLang == AppLang.SK) {
+                "Zlúčených $merged duplicitných servisných úloh"
+            } else {
+                "Merged $merged duplicate service task${if (merged > 1) "s" else ""}"
+            }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     var showServiceDialog by remember { mutableStateOf(false) }
     var editingServiceLog by remember { mutableStateOf<ServiceLogEntity?>(null) }
     var prefilledTaskName by remember { mutableStateOf("") }
@@ -220,7 +233,37 @@ fun MaintenanceServiceScreen(viewModel: MainViewModel, navController: NavControl
                     onAddTask = { newTask ->
                         scope.launch {
                             viewModel.repository.insertMaintenanceTask(newTask)
-                            snackbarHostState.showSnackbar(appLang.pick("Schedule updated", "Servisný plán aktualizovaný"))
+                            val merged = viewModel.repository.deduplicateMaintenanceTasksForBike(newTask.motorcycleId)
+                            val message = if (merged > 0) {
+                                if (appLang == AppLang.SK) {
+                                    "Úloha uložená a zlúčených $merged duplikátov"
+                                } else {
+                                    "Task saved and $merged duplicate${if (merged > 1) "s" else ""} merged"
+                                }
+                            } else {
+                                appLang.pick("Schedule updated", "Servisný plán aktualizovaný")
+                            }
+                            snackbarHostState.showSnackbar(message)
+                        }
+                    },
+                    onLoadStandardTasks = { standardTasks ->
+                        scope.launch {
+                            viewModel.repository.insertMaintenanceTasks(standardTasks)
+                            val merged = viewModel.repository.deduplicateMaintenanceTasksForBike(activeBike!!.id)
+                            val message = if (merged > 0) {
+                                if (appLang == AppLang.SK) {
+                                    "Štandardný plán načítaný (zlúčených $merged duplikátov)"
+                                } else {
+                                    "Standard schedule loaded ($merged duplicate${if (merged > 1) "s" else ""} merged)"
+                                }
+                            } else {
+                                if (appLang == AppLang.SK) {
+                                    "Štandardný servisný plán načítaný"
+                                } else {
+                                    "Standard factory schedule loaded"
+                                }
+                            }
+                            snackbarHostState.showSnackbar(message)
                         }
                     },
                     onDeleteTask = { task ->
@@ -547,6 +590,7 @@ private fun ScheduledIntervalsTab(
     evaluatedTasks: List<MaintenanceTaskStatus>,
     onCompleteTask: (MaintenanceTaskEntity) -> Unit,
     onAddTask: (MaintenanceTaskEntity) -> Unit,
+    onLoadStandardTasks: (List<MaintenanceTaskEntity>) -> Unit,
     onDeleteTask: (MaintenanceTaskEntity) -> Unit
 ) {
     var selectedCategoryFilter by remember { mutableStateOf("ALL") }
@@ -573,24 +617,23 @@ private fun ScheduledIntervalsTab(
         Button(
             onClick = {
                 val newTasks = MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(specs, appLang.code)
-                newTasks.forEach { taskDto ->
-                    onAddTask(
-                        MaintenanceTaskEntity(
-                            taskId = taskDto.taskId,
-                            motorcycleId = activeBike.id,
-                            category = taskDto.category,
-                            taskName = taskDto.taskName,
-                            actionType = taskDto.actionType,
-                            firstBreakInAtKm = taskDto.firstBreakInAtKm,
-                            intervalKm = taskDto.intervalKm,
-                            intervalMonths = taskDto.intervalMonths,
-                            warningThresholdKm = taskDto.warningThresholdKm,
-                            warningThresholdDays = taskDto.warningThresholdDays,
-                            notes = taskDto.notes,
-                            oemPartNumbersJson = "[]"
-                        )
+                val entities = newTasks.map { taskDto ->
+                    MaintenanceTaskEntity(
+                        taskId = taskDto.taskId,
+                        motorcycleId = activeBike.id,
+                        category = taskDto.category,
+                        taskName = taskDto.taskName,
+                        actionType = taskDto.actionType,
+                        firstBreakInAtKm = taskDto.firstBreakInAtKm,
+                        intervalKm = taskDto.intervalKm,
+                        intervalMonths = taskDto.intervalMonths,
+                        warningThresholdKm = taskDto.warningThresholdKm,
+                        warningThresholdDays = taskDto.warningThresholdDays,
+                        notes = taskDto.notes,
+                        oemPartNumbersJson = "[]"
                     )
                 }
+                onLoadStandardTasks(entities)
             },
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)

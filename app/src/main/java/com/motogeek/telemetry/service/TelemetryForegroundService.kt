@@ -28,6 +28,7 @@ import com.motogeek.telemetry.data.local.MotoGeekRepository
 import com.motogeek.telemetry.data.local.RideSessionEntity
 import com.motogeek.telemetry.data.local.TelemetryTrackPointEntity
 import com.motogeek.telemetry.domain.dsp.MotorcycleSensorFusionEngine
+import com.motogeek.telemetry.domain.telemetry.GpxTelemetryCodec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -106,7 +107,20 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
 
         fusionEngine = MotorcycleSensorFusionEngine { event ->
             synchronized(bufferLock) {
-                val updatedEvent = event.copy(rideId = activeRideId)
+                val coords = if (GpxTelemetryCodec.isValidCoordinate(event.latitude, event.longitude)) {
+                    Pair(event.latitude, event.longitude)
+                } else {
+                    lastLocation?.let {
+                        if (GpxTelemetryCodec.isValidCoordinate(it.latitude, it.longitude)) {
+                            Pair(it.latitude, it.longitude)
+                        } else null
+                    } ?: Pair(0.0, 0.0)
+                }
+                val updatedEvent = event.copy(
+                    rideId = activeRideId,
+                    latitude = coords.first,
+                    longitude = coords.second
+                )
                 cornerEventBuffer.add(updatedEvent)
                 sessionCorners.add(updatedEvent)
             }
@@ -400,53 +414,71 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
     }
 
+    private fun isLocationAccurateAndValid(location: Location): Boolean {
+        val lat = location.latitude
+        val lon = location.longitude
+        if (!GpxTelemetryCodec.isValidCoordinate(lat, lon)) return false
+        if (location.hasAccuracy()) {
+            val acc = location.accuracy
+            if (!acc.isFinite() || acc <= 0f || acc > 50f) return false
+        }
+        return true
+    }
+
     private fun updateElevationClimb(altitudeMeters: Double) {
         if (!altitudeMeters.isFinite()) return
         val prevRef = lastReferenceAltitudeMeters
-        if (prevRef == null) {
+        if (prevRef == null || !prevRef.isFinite()) {
             lastReferenceAltitudeMeters = altitudeMeters
             return
         }
         val delta = altitudeMeters - prevRef
-        if (delta >= 1.5) {
+        if (delta.isFinite() && delta >= 1.5) {
             accumulatedElevationGainMeters += delta
             lastReferenceAltitudeMeters = altitudeMeters
-        } else if (delta <= -1.5) {
+        } else if (delta.isFinite() && delta <= -1.5) {
             lastReferenceAltitudeMeters = altitudeMeters
         }
     }
 
     private fun processLocationUpdate(location: Location) {
-        if (_state.value.isRiding) {
-            if (lastLocation != null) {
-                val distMeters = lastLocation!!.distanceTo(location).toDouble()
-                if (distMeters.isFinite() && distMeters >= 0.0) {
+        val isValidFix = isLocationAccurateAndValid(location)
+
+        if (_state.value.isRiding && isValidFix) {
+            val prev = lastLocation
+            if (prev != null) {
+                val distMeters = prev.distanceTo(location).toDouble()
+                if (distMeters.isFinite() && distMeters >= 0.0 && distMeters < 5000.0) {
                     accumulatedDistanceKm += distMeters / 1000.0
                 }
             }
-            if (!hasBarometerSample && location.hasAltitude()) {
+            if (!hasBarometerSample && location.hasAltitude() && location.altitude.isFinite()) {
                 updateElevationClimb(location.altitude)
             }
         }
-        lastLocation = location
+
+        if (isValidFix) {
+            lastLocation = location
+        }
+
         fusionEngine.processLocation(location)
 
-        val speedKmh = if (location.hasSpeed()) location.speed * 3.6 else fusionEngine.currentSpeedKmh
+        val speedKmh = if (location.hasSpeed()) (location.speed * 3.6).toDouble() else fusionEngine.currentSpeedKmh
         if (!_state.value.isRiding && TelemetryPreferences(this).autoStartAbove5Kmh && speedKmh > 5.0) {
             startRide(motorcycleId)
         }
 
-        if (_state.value.isRiding) {
-            val resolvedAlt = smoothedBaroAltitudeMeters ?: location.altitude
+        if (_state.value.isRiding && isValidFix) {
+            val resolvedAlt = smoothedBaroAltitudeMeters ?: (if (location.hasAltitude() && location.altitude.isFinite()) location.altitude else 0.0)
             val tp = TelemetryTrackPointEntity(
                 rideId = activeRideId,
                 timestampMs = System.currentTimeMillis(),
                 latitude = location.latitude,
                 longitude = location.longitude,
-                speedKmh = fusionEngine.currentSpeedKmh,
-                leanAngleDeg = fusionEngine.currentLeanAngleDeg,
-                longitudinalG = fusionEngine.currentLongitudinalG,
-                lateralG = fusionEngine.currentLateralG,
+                speedKmh = fusionEngine.currentSpeedKmh.takeIf { it.isFinite() } ?: 0.0,
+                leanAngleDeg = fusionEngine.currentLeanAngleDeg.takeIf { it.isFinite() } ?: 0.0,
+                longitudinalG = fusionEngine.currentLongitudinalG.takeIf { it.isFinite() } ?: 0.0,
+                lateralG = fusionEngine.currentLateralG.takeIf { it.isFinite() } ?: 0.0,
                 altitudeMeters = resolvedAlt.takeIf { it.isFinite() } ?: 0.0
             )
             synchronized(bufferLock) {
@@ -578,6 +610,56 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         if (eventsToInsert.isNotEmpty()) {
             repository.insertCornerEvents(eventsToInsert)
         }
+
+        // Periodically persist the active RideSessionEntity summary so forced process kills never leave ghost rides
+        if (activeRideId != 0L && _state.value.isRiding) {
+            val now = System.currentTimeMillis()
+            val durationSec = (now - startTimeMs - timePausedMs) / 1000
+            val avgSpeed = if (durationSec > 0) {
+                (accumulatedDistanceKm / (durationSec / 3600.0)).takeIf { it.isFinite() } ?: 0.0
+            } else 0.0
+
+            val recordedCorners = synchronized(bufferLock) { sessionCorners.toList() }
+            val maxTurnInRate = recordedCorners.maxOfOrNull { it.maxRollRateDegPerSec }?.takeIf { it.isFinite() } ?: 0.0
+            val avgScore = if (recordedCorners.isNotEmpty()) {
+                recordedCorners.map { it.cornerScore }.average().takeIf { it.isFinite() } ?: 0.0
+            } else 0.0
+            val trailBrakingPct = if (recordedCorners.isNotEmpty()) {
+                val countWithTrailBrake = recordedCorners.count { it.peakBrakingG <= -0.12 }
+                ((countWithTrailBrake.toDouble() / recordedCorners.size) * 100.0).takeIf { it.isFinite() } ?: 0.0
+            } else 0.0
+            val finiteElevationGain = accumulatedElevationGainMeters.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+
+            val badge = fusionEngine.classifyRidingStyle(
+                avgG = ((maxBrakingG + maxAccelG + maxLateralG) / 3.0).takeIf { it.isFinite() } ?: 0.0,
+                maxLean = max(maxLeanLeft, maxLeanRight)
+            )
+
+            repository.insertRideSession(
+                RideSessionEntity(
+                    rideId = activeRideId,
+                    motorcycleId = motorcycleId,
+                    startTimeEpochMs = startTimeMs,
+                    endTimeEpochMs = now,
+                    distanceKm = accumulatedDistanceKm.takeIf { it.isFinite() } ?: 0.0,
+                    avgSpeedKmh = avgSpeed.takeIf { it.isFinite() } ?: 0.0,
+                    maxSpeedKmh = maxSpeedKmh.takeIf { it.isFinite() } ?: 0.0,
+                    maxLeanLeftDeg = maxLeanLeft.takeIf { it.isFinite() } ?: 0.0,
+                    maxLeanRightDeg = maxLeanRight.takeIf { it.isFinite() } ?: 0.0,
+                    maxLateralG = maxLateralG.takeIf { it.isFinite() } ?: 0.0,
+                    maxBrakingG = maxBrakingG.takeIf { it.isFinite() } ?: 0.0,
+                    maxAccelG = maxAccelG.takeIf { it.isFinite() } ?: 0.0,
+                    totalCornersCount = fusionEngine.totalCorners,
+                    leftCornersCount = fusionEngine.leftCorners,
+                    rightCornersCount = fusionEngine.rightCorners,
+                    maxTurnInRateDegPerSec = maxTurnInRate,
+                    trailBrakingScorePct = trailBrakingPct,
+                    avgCornerScore = avgScore,
+                    elevationGainMeters = finiteElevationGain,
+                    ridingStyleBadge = badge
+                )
+            )
+        }
     }
 
     private fun pauseRide() {
@@ -659,14 +741,14 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                     motorcycleId = motorcycleId,
                     startTimeEpochMs = startTimeMs,
                     endTimeEpochMs = System.currentTimeMillis(),
-                    distanceKm = accumulatedDistanceKm,
-                    avgSpeedKmh = avgSpeed,
-                    maxSpeedKmh = maxSpeedKmh,
-                    maxLeanLeftDeg = maxLeanLeft,
-                    maxLeanRightDeg = maxLeanRight,
-                    maxLateralG = maxLateralG,
-                    maxBrakingG = maxBrakingG,
-                    maxAccelG = maxAccelG,
+                    distanceKm = accumulatedDistanceKm.takeIf { it.isFinite() } ?: 0.0,
+                    avgSpeedKmh = avgSpeed.takeIf { it.isFinite() } ?: 0.0,
+                    maxSpeedKmh = maxSpeedKmh.takeIf { it.isFinite() } ?: 0.0,
+                    maxLeanLeftDeg = maxLeanLeft.takeIf { it.isFinite() } ?: 0.0,
+                    maxLeanRightDeg = maxLeanRight.takeIf { it.isFinite() } ?: 0.0,
+                    maxLateralG = maxLateralG.takeIf { it.isFinite() } ?: 0.0,
+                    maxBrakingG = maxBrakingG.takeIf { it.isFinite() } ?: 0.0,
+                    maxAccelG = maxAccelG.takeIf { it.isFinite() } ?: 0.0,
                     totalCornersCount = fusionEngine.totalCorners,
                     leftCornersCount = fusionEngine.leftCorners,
                     rightCornersCount = fusionEngine.rightCorners,

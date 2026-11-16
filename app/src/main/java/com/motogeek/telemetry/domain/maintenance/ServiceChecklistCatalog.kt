@@ -57,25 +57,31 @@ object ServiceChecklistCatalog {
         template: GeneralWorkshopCheckTemplate,
         task: MaintenanceTaskEntity
     ): Boolean {
+        if (
+            ServiceTaskDeduplicator.canonicalTaskKey(template.key, template.nameEn, template.category) ==
+            ServiceTaskDeduplicator.canonicalTaskKey(task.taskId, task.taskName, task.category)
+        ) {
+            return true
+        }
         val id = task.taskId.uppercase()
-        val name = task.taskName.lowercase()
-        val cat = task.category.lowercase()
+        val name = ServiceTaskDeduplicator.stripAccents(task.taskName)
+        val cat = ServiceTaskDeduplicator.stripAccents(task.category)
         return when (template.key) {
             "GEN_ENGINE_OIL" -> id == "STD_ENGINE_OIL" ||
                 ((name.contains("oil") || name.contains("olej")) && !name.contains("fork") && !name.contains("vidlic"))
             "GEN_OIL_FILTER" -> id == "STD_ENGINE_OIL" ||
-                (name.contains("oil filter") || name.contains("olejový filter") ||
+                (name.contains("oil filter") || name.contains("olejovy filter") ||
                     ((name.contains("oil") || name.contains("olej")) && name.contains("filter")))
             "GEN_AIR_FILTER" -> id == "STD_AIR_FILTER" ||
-                name.contains("air filter") || name.contains("vzduchový filter") || name.contains("air")
+                name.contains("air filter") || name.contains("vzduchovy filter") || name.contains("air") || name.contains("vzduch")
             "GEN_SPARK_PLUGS" -> id == "STD_SPARK_PLUGS" ||
-                cat == "ignition" || name.contains("spark") || name.contains("sviečk")
+                cat == "ignition" || name.contains("spark") || name.contains("svieck")
             "GEN_CHAIN" -> id == "STD_CHAIN_LUBE" ||
-                cat == "drivetrain" || name.contains("chain") || name.contains("reťaz")
-            "GEN_BRAKE_PADS" -> name.contains("pad") || name.contains("platnič") || name.contains("doštič")
+                cat == "drivetrain" || name.contains("chain") || name.contains("retaz")
+            "GEN_BRAKE_PADS" -> name.contains("pad") || name.contains("platnic") || name.contains("dostic")
             "GEN_BRAKE_FLUID" -> id == "STD_BRAKE_FLUID" ||
                 (name.contains("brake") && name.contains("fluid")) ||
-                name.contains("brzdová kvapalina") || name == "brzdy" || cat == "brakes"
+                name.contains("brzdova kvapalina") || name == "brzdy" || cat == "brakes"
             "GEN_COOLANT" -> id == "STD_COOLANT" ||
                 cat == "cooling" || name.contains("coolant") || name.contains("water") ||
                 name.contains("chlad") || name.contains("voda")
@@ -83,10 +89,10 @@ object ServiceChecklistCatalog {
                 cat == "tires" || name.contains("tire") || name.contains("tyre") || name.contains("pneu")
             "GEN_CLUTCH_THROTTLE" -> name.contains("clutch") || name.contains("throttle") ||
                 name.contains("spojk") || name.contains("plyn")
-            "GEN_STEERING" -> name.contains("steering") || name.contains("krk riadenia")
+            "GEN_STEERING" -> name.contains("steering") || name.contains("krk riadenia") || name.contains("krku riadenia")
             "GEN_FORKS" -> name.contains("fork") || name.contains("vidlic")
-            "GEN_REAR_SHOCK" -> name.contains("shock") || name.contains("tlmič")
-            "GEN_BATTERY" -> name.contains("battery") || name.contains("batér")
+            "GEN_REAR_SHOCK" -> name.contains("shock") || name.contains("tlmic")
+            "GEN_BATTERY" -> name.contains("battery") || name.contains("bater")
             "GEN_LIGHTS" -> name.contains("light") || name.contains("svetl")
             "GEN_BOLTS" -> name.contains("bolt") || name.contains("torque") || name.contains("skrut")
             else -> false
@@ -99,12 +105,12 @@ object ServiceChecklistCatalog {
         category: String
     ): List<ServiceSubOption> {
         val id = taskId?.uppercase().orEmpty()
-        val n = taskName.lowercase()
-        val c = category.lowercase()
+        val n = ServiceTaskDeduplicator.stripAccents(taskName)
+        val c = ServiceTaskDeduplicator.stripAccents(category)
 
         return when {
             // Standalone Oil Filter item (not combined Engine Oil & Filter)
-            (id == "GEN_OIL_FILTER" || ((n.contains("oil filter") || n.contains("olejový filter")) && !n.contains("engine") && !n.contains("motorový"))) -> listOf(
+            (id == "GEN_OIL_FILTER" || ((n.contains("oil filter") || n.contains("olejovy filter")) && !n.contains("engine") && !n.contains("motorovy"))) -> listOf(
                 ServiceSubOption("OIL_FILTER_CHECKED", "Filter Checked", "Skontrolovaný", completesInspectionTask = true),
                 ServiceSubOption("OIL_FILTER_CHANGED", "Filter Changed", "Filter vymenený", completesReplacementTask = true)
             )
@@ -130,13 +136,13 @@ object ServiceChecklistCatalog {
             )
             // Spark Plugs
             id == "STD_SPARK_PLUGS" || id == "GEN_SPARK_PLUGS" || c == "ignition" ||
-                n.contains("spark") || n.contains("sviečk") -> listOf(
+                n.contains("spark") || n.contains("svieck") -> listOf(
                 ServiceSubOption("PLUG_CHECKED", "Checked / Gap OK", "Skontrolované / odtrh", completesInspectionTask = true),
                 ServiceSubOption("PLUG_CHANGED", "Plugs Changed", "Sviečky vymenené", completesReplacementTask = true)
             )
             // Drive Chain & Sprockets
             id == "STD_CHAIN_LUBE" || id == "GEN_CHAIN" || c == "drivetrain" ||
-                n.contains("chain") || n.contains("reťaz") -> listOf(
+                n.contains("chain") || n.contains("retaz") -> listOf(
                 ServiceSubOption("CHAIN_CHECKED", "Slack Checked", "Vôľa skontrolovaná", completesInspectionTask = true),
                 ServiceSubOption("CHAIN_CLEANED_LUBED", "Cleaned & Lubed", "Vyčistená a namazaná", completesServiceTask = true),
                 ServiceSubOption("CHAIN_ADJUSTED", "Tension Adjusted", "Napnutie nastavené", completesServiceTask = true),
@@ -150,7 +156,7 @@ object ServiceChecklistCatalog {
                 ServiceSubOption("BRAKE_BLED", "Brakes Bled", "Odvzdušnené", completesServiceTask = true)
             )
             // Brake Pads Front/Rear
-            id == "GEN_BRAKE_PADS" || n.contains("pad") || n.contains("platnič") || n.contains("doštič") -> listOf(
+            id == "GEN_BRAKE_PADS" || n.contains("pad") || n.contains("platnic") || n.contains("dostic") -> listOf(
                 ServiceSubOption("FRONT_PADS_CHECKED", "Front Checked", "Predné skontrolované", completesInspectionTask = true),
                 ServiceSubOption("FRONT_PADS_CHANGED", "Front Changed", "Predné vymenené", completesReplacementTask = true),
                 ServiceSubOption("REAR_PADS_CHECKED", "Rear Checked", "Zadné skontrolované", completesInspectionTask = true),
@@ -181,7 +187,7 @@ object ServiceChecklistCatalog {
                 ServiceSubOption("FORKS_OIL_SEALS_CHANGED", "Oil & Seals Changed", "Olej a guferá vymenené", completesReplacementTask = true)
             )
             // Rear Shock
-            id == "GEN_REAR_SHOCK" || n.contains("shock") || n.contains("tlmič") -> listOf(
+            id == "GEN_REAR_SHOCK" || n.contains("shock") || n.contains("tlmic") -> listOf(
                 ServiceSubOption("SHOCK_CHECKED", "Checked", "Skontrolovaný", completesInspectionTask = true),
                 ServiceSubOption("SHOCK_SERVICED", "Adjusted / Rebuilt", "Nastavený / Repasovaný", completesServiceTask = true, completesReplacementTask = true)
             )
@@ -193,13 +199,13 @@ object ServiceChecklistCatalog {
                 ServiceSubOption("CONTROLS_CHANGED", "Cable / Clutch Changed", "Lanko / spojka vymenená", completesReplacementTask = true)
             )
             // Steering Head Bearings
-            id == "GEN_STEERING" || n.contains("steering") || n.contains("krk riadenia") -> listOf(
+            id == "GEN_STEERING" || n.contains("steering") || n.contains("krk riadenia") || n.contains("krku riadenia") -> listOf(
                 ServiceSubOption("STEERING_CHECKED", "Play Checked", "Vôľa skontrolovaná", completesInspectionTask = true),
                 ServiceSubOption("STEERING_GREASED", "Adjusted / Greased", "Nastavené / namazané", completesServiceTask = true),
                 ServiceSubOption("STEERING_CHANGED", "Bearings Changed", "Ložiská vymenené", completesReplacementTask = true)
             )
             // Battery & Charging
-            id == "GEN_BATTERY" || n.contains("battery") || n.contains("batér") -> listOf(
+            id == "GEN_BATTERY" || n.contains("battery") || n.contains("bater") -> listOf(
                 ServiceSubOption("BATTERY_CHECKED", "Voltage Checked", "Napätie skontrolované", completesInspectionTask = true),
                 ServiceSubOption("BATTERY_CHARGED", "Charged", "Dobitá", completesServiceTask = true),
                 ServiceSubOption("BATTERY_CHANGED", "Battery Changed", "Batéria vymenená", completesReplacementTask = true)
@@ -282,18 +288,25 @@ object ServiceChecklistCatalog {
 
     fun itemMatchesAndCompletesTask(item: ServiceChecklistItem, task: MaintenanceTaskEntity): Boolean {
         if (!item.completesTask) return false
-        if (!item.taskId.isNullOrBlank()) {
-            return item.taskId == task.taskId
+        if (!item.taskId.isNullOrBlank() && item.taskId == task.taskId) {
+            return true
+        }
+        if (
+            ServiceTaskDeduplicator.canonicalTaskKey(item.taskId, item.name) ==
+            ServiceTaskDeduplicator.canonicalTaskKey(task.taskId, task.taskName, task.category)
+        ) {
+            return true
         }
         // Fallback match for standard checklist items without explicit taskId
+        val normItemName = ServiceTaskDeduplicator.stripAccents(item.name)
         val matchedTemplate = standardGeneralChecks.firstOrNull {
-            it.nameEn.equals(item.name, ignoreCase = true) ||
-                it.nameSk.equals(item.name, ignoreCase = true)
+            ServiceTaskDeduplicator.stripAccents(it.nameEn) == normItemName ||
+                ServiceTaskDeduplicator.stripAccents(it.nameSk) == normItemName
         }
         if (matchedTemplate != null && doesGeneralTemplateOverlapTask(matchedTemplate, task)) {
             return true
         }
-        return item.name.equals(task.taskName, ignoreCase = true)
+        return normItemName == ServiceTaskDeduplicator.stripAccents(task.taskName)
     }
 
     fun localizeSubAction(key: String, langCode: String): String {

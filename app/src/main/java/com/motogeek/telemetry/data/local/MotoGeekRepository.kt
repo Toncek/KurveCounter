@@ -1,5 +1,6 @@
 package com.motogeek.telemetry.data.local
 
+import com.motogeek.telemetry.domain.maintenance.ServiceTaskDeduplicator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
@@ -106,6 +107,29 @@ class MotoGeekRepository(val dao: MotoGeekDao) {
 
     fun getMaintenanceTasksForMotorcycleFlow(motorcycleId: String): Flow<List<MaintenanceTaskEntity>> {
         return dao.getMaintenanceTasksForMotorcycleFlow(motorcycleId)
+    }
+
+    suspend fun deduplicateMaintenanceTasksForBike(motorcycleId: String): Int {
+        val currentTasks = dao.getMaintenanceTasksForMotorcycle(motorcycleId)
+        val result = ServiceTaskDeduplicator.deduplicateTasks(currentTasks)
+        for (taskId in result.removedTaskIds) {
+            dao.deleteMaintenanceTask(taskId, motorcycleId)
+        }
+        if (result.deduplicatedTasks.isNotEmpty()) {
+            dao.insertMaintenanceTasks(result.deduplicatedTasks)
+        }
+        val currentLogs = dao.getServiceLogsForMotorcycle(motorcycleId)
+        for (log in currentLogs) {
+            val remapped = ServiceTaskDeduplicator.remapServiceLog(
+                log,
+                result.deduplicatedTasks,
+                result.remappedTaskIds
+            )
+            if (remapped != log) {
+                dao.updateServiceLog(remapped)
+            }
+        }
+        return result.removedTaskIds.size
     }
 
     // --- Service Logs ---

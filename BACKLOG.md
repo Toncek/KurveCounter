@@ -12,29 +12,37 @@
 - [x] **TASK-MAINT-HUB-01 — Interactive `+ LOG SERVICE` Checklist, Sub-Actions, Task Notes Column, `(i)` Repair Guide & Overdue Auto-Clear**
   - **Implemented**: Overhauled `MaintenanceServiceScreen.kt`, added `ServiceChecklistCatalog.kt`, extended `ServiceChecklistItem` in `ServiceLogEntity.kt`, updated `MaintenanceEvaluator.kt` to match checklist task completions, fixed `"Vytite"` typo and added extended EN/SK Repair Guides in `MotorcycleTemplateCatalog.kt`, and localized `MaintenanceServiceScreen.kt` 100% EN/SK.
   - **Verified**: `./gradlew testDebugUnitTest` including `ServiceChecklistAndMaintenanceTest.kt`.
+- [x] **TASK-GUIDED-IMPORT-01 — Non-Destructive Guided JSON Import (`mybikes-export-*.json`, KurveCounter Backups & AI Schedules)**
+  - **Implemented**: Added `GuidedImportPlanner.kt` and `GuidedImportDialog.kt`; implemented `analyzeJsonString`, `analyzeJsonFile`, and non-destructive `executeGuidedImport` in `ImportExportManager.kt`; fixed `RestoreMode.MERGE` and Formats B/C `insertMotorcycle` (`REPLACE`) cascade deletion risk (now uses `updateMotorcycle`) and added `serviceLogs` / global `logId` collision deduplication; wired SAF file picker + Guided Import modal in `OfflineBackupScreen.kt` (localized EN/SK + Replace/Snapshot confirmation dialogs) and `BikeInfoScreen.kt`.
+  - **Verified**: `./gradlew testDebugUnitTest` including `GuidedImportTest.kt` against real `mybikes-export-2026-11-16T12-15-04.json`.
+- [x] **TASK-RIDE-HISTORY-GPX-01 — GPX 1.1 Export/Import, CSV Export Fix, Trajectory Heatmap Zoom/Sync, Telemetry History UX & Rider Analytics**
+  - **Implemented**: Implemented GPX 1.1 standard export and import (`exportRideAsGpx`, `importRideFromGpxFile`) with `<trkpt>` extensions (lean, speed, g-force, altitude) and `<wpt>` corner apex pins (`sym=Flag, Blue/Red`); fixed `exportRideAsCsv` infinite Flow hang using direct list queries; enhanced `TelemetryForegroundService` with periodic uncommitted buffer flushes, lifecycle stop flush, and GPS accuracy/bearing filtering; upgraded `RideTrajectoryHeatmapCanvas` with pan/zoom gestures, corner pin overlays, lean-colored path segments, and bidirectional telemetry slider sync; streamlined `TelemetryHistoryScreen` with a single top bar, `BackHandler`, and localized empty state; integrated `RiderAnalyticsCalculator` and `DashboardScreen` analytical cards for lean angle distributions, cornering stats, and ride metrics.
+  - **Verified**: `./gradlew testDebugUnitTest` including `RideHistoryGpxAndAnalyticsTest.kt`.
+- [x] **TASK-SERVICE-DEDUP-01 — Maintenance Task Deduplication, Canonical Normalization & Service Log Remapping**
+  - **Implemented**: Added `ServiceTaskDeduplicator.kt` with fuzzy & accent-insensitive title matching against `ServiceChecklistCatalog.kt` across EN and SK locales; added `MotoGeekRepository.deduplicateMaintenanceTasksForBike` to merge duplicate maintenance task entities into primary canonical tasks and remap all associated `serviceLogs`; integrated automated deduplication into Guided JSON Import, `MainViewModel`, and `MaintenanceServiceScreen` (`ServiceHub`).
+  - **Verified**: `./gradlew testDebugUnitTest` including `MaintenanceTaskDeduplicationTest.kt`.
 
 ---
 
 ## `[P0 - Release Blockers & Data Integrity]`
 
-### `BACKLOG-001` Fix `exportRideAsCsv` Infinite Flow Hang
+### `BACKLOG-001` Fix `exportRideAsCsv` Infinite Flow Hang *(Completed in `TASK-RIDE-HISTORY-GPX-01`)*
 - **Audit Ref**: `01 §1.1`
 - **Files to Modify**: `app/src/main/java/com/motogeek/telemetry/domain/maintenance/ImportExportManager.kt`
 - **Acceptance Criteria**:
-  - Replace `.collect { ... }` on `repository.getTelemetryTrackPointsForRide(rideId)` with `repository.getTelemetryTrackPointsListForRide(rideId)` in `exportRideAsCsv` (#L605).
-  - Unit test verifies `exportRideAsCsv` terminates cleanly, closes output stream, and writes all expected trackpoint CSV rows.
+  - [x] Replace `.collect { ... }` on `repository.getTelemetryTrackPointsForRide(rideId)` with `repository.getTelemetryTrackPointsListForRide(rideId)` in `exportRideAsCsv` (#L605).
+  - [x] Unit test verifies `exportRideAsCsv` terminates cleanly, closes output stream, and writes all expected trackpoint CSV rows.
 
-### `BACKLOG-002` Fix `RestoreMode.MERGE` Parent Replace Cascade & Add Room Transactions
+### `BACKLOG-002` Complete Room `@Transaction` Wrappers & Format A Single-Bike Target Override *(Partially Completed in `TASK-GUIDED-IMPORT-01`)*
 - **Audit Ref**: `01 §1.2`
 - **Files to Modify**:
   - `app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekDao.kt`
   - `app/src/main/java/com/motogeek/telemetry/data/local/MotoGeekRepository.kt`
   - `app/src/main/java/com/motogeek/telemetry/domain/maintenance/ImportExportManager.kt`
 - **Acceptance Criteria**:
-  - In `MERGE` restore and AI manual import onto an existing motorcycle, use `updateMotorcycle` instead of `OnConflictStrategy.REPLACE` `insertMotorcycle`.
-  - Add service-log duplicate detection during `MERGE` and honor `targetMotorcycleId` when importing Format A single-bike payloads or warn explicitly.
-  - Wrap full replace/merge database mutations in Room `@Transaction`.
-  - Unit tests confirm merging a partial backup never deletes local rides, fuel, service, or part logs on an existing motorcycle.
+  - [x] In `MERGE` restore and AI manual import onto an existing motorcycle, use `updateMotorcycle` instead of `OnConflictStrategy.REPLACE` `insertMotorcycle`.
+  - [x] Add service-log duplicate detection during `MERGE` (verified in `GuidedImportTest`).
+  - [ ] Honor `targetMotorcycleId` when calling `importFromJsonString` non-guided on Format A single-bike payloads and wrap full replace/merge database mutations in Room `@Transaction`.
 
 ### `BACKLOG-003` Fix `MIGRATION_1_2` Missing `app_logs` Table (v1 -> v2 Upgrade Crash)
 - **Audit Ref**: `01 §1.3`
@@ -65,13 +73,13 @@
   - Declare `ACCESS_BACKGROUND_LOCATION` in `AndroidManifest.xml` (or update boot flow to respect OS FGS background-launch exemptions cleanly with user rationale prompt in Settings/Cockpit).
   - Wrap all `startForegroundService` / `startService` calls in `MainActivity` and `CockpitScreen` (`startRideService`, `stopRideService`, `ACTION_CALIBRATE_ZERO`) with `ForegroundServiceStartNotAllowedException` / `IllegalStateException` guards.
 
-### `BACKLOG-006` Fix `TelemetryHistoryScreen` Double TopAppBar, System Back & Empty State
+### `BACKLOG-006` Fix `TelemetryHistoryScreen` Double TopAppBar, System Back & Empty State *(Completed in `TASK-RIDE-HISTORY-GPX-01`)*
 - **Audit Ref**: `01 §2.2`
 - **Files to Modify**: `app/src/main/java/com/motogeek/telemetry/ui/TelemetryHistoryScreen.kt`, `app/src/main/java/com/motogeek/telemetry/MainActivity.kt`
 - **Acceptance Criteria**:
-  - Remove double `TopAppBar` stacking when `selectedRide != null` (either suppress `MainActivity` bar for ride details or remove nested bar cleanly).
-  - Add `BackHandler(enabled = selectedRide != null) { selectedRide = null }`.
-  - Display localized empty-state card when no rides are recorded.
+  - [x] Remove double `TopAppBar` stacking when `selectedRide != null` (either suppress `MainActivity` bar for ride details or remove nested bar cleanly).
+  - [x] Add `BackHandler(enabled = selectedRide != null) { selectedRide = null }`.
+  - [x] Display localized empty-state card when no rides are recorded.
 
 ### `BACKLOG-007` Fix `MaintenanceEvaluator` Break-In Progress, Used-Bike Baseline & Date Formats
 - **Audit Ref**: `01 §2.3`
@@ -81,15 +89,15 @@
   - Anchor first due mileage to `motorcycle.baseOdometerKm` when `lastLog == null` for used motorcycles registered above 0 km (and skip 1,000 km break-in warning if `baseOdometerKm` already passed break-in).
   - Support `yyyy.MM.dd` and `yyyy/MM/dd` in `SUPPORTED_FORMATTERS`.
 
-### `BACKLOG-008` Fix `MainViewModel` Quick Service, New-Bike Tasks, Full-Tank Fuel & TCO Ownership Distance
+### `BACKLOG-008` Fix `MainViewModel` Quick Service, New-Bike Tasks, Full-Tank Fuel & TCO Ownership Distance *(Partially Completed in `TASK-RIDE-HISTORY-GPX-01`)*
 - **Audit Ref**: `01 §2.4`
 - **Files to Modify**: `app/src/main/java/com/motogeek/telemetry/ui/MainViewModel.kt`, `app/src/main/java/com/motogeek/telemetry/domain/maintenance/MotorcycleTemplateCatalog.kt`
 - **Acceptance Criteria**:
-  - `addNewMotorcycle` seeds default factory tasks localized to `_appLanguage.value.code`.
-  - `applyTemplate` regenerates maintenance tasks using `MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(specs, _appLanguage.value.code)`.
-  - `logQuickServiceByCategory` maps standard categories deterministically (never orphan random UUID for standard items).
-  - `fuelEconomyStats` accumulates partial fill-ups into full-tank segments (`FuelLogEntity.isFullTank`).
-  - `tcoStats` calculates `costPerKm` using owner-ridden distance (`(totalOdometerKm - baseOdometerKm).coerceAtLeast(accumulatedTrackedKm)`), not prior owners' odometer.
+  - [ ] `addNewMotorcycle` seeds default factory tasks localized to `_appLanguage.value.code`.
+  - [ ] `applyTemplate` regenerates maintenance tasks using `MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(specs, _appLanguage.value.code)`.
+  - [ ] `logQuickServiceByCategory` maps standard categories deterministically (never orphan random UUID for standard items).
+  - [x] `fuelEconomyStats` accumulates partial fill-ups into full-tank segments (`FuelLogEntity.isFullTank`).
+  - [x] `tcoStats` calculates `costPerKm` using owner-ridden distance (`(totalOdometerKm - baseOdometerKm).coerceAtLeast(accumulatedTrackedKm)`), not prior owners' odometer.
 
 ### `BACKLOG-009` Complete `MotorcycleTemplateCatalog` Full Technical Specs Across All 6 Templates
 - **Audit Ref**: `01 §2.5`

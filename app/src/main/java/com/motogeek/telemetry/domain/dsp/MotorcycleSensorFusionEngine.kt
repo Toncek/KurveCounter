@@ -50,6 +50,8 @@ class MotorcycleSensorFusionEngine(
     private var cornerMaxRollRate = 0.0
     private var lastLat = 0.0
     private var lastLon = 0.0
+    private var cornerApexLat = 0.0
+    private var cornerApexLon = 0.0
 
     private var lastGpsTimeMs: Long = 0L
     private var lastGpsLat = 0.0
@@ -137,12 +139,16 @@ class MotorcycleSensorFusionEngine(
         latitude: Double,
         longitude: Double
     ) {
+        val isValidGps = latitude.isFinite() && longitude.isFinite() &&
+                latitude in -90.0..90.0 && longitude in -180.0..180.0 &&
+                !(abs(latitude) < 0.0001 && abs(longitude) < 0.0001)
+
         var finalSpeedMs = speedMs
         var derivedSpeed = false
         
         val dtSec = if (lastGpsTimeMs > 0) (timestampMs - lastGpsTimeMs) / 1000.0 else 0.0
         
-        if (!hasSpeed && dtSec > 0) {
+        if (!hasSpeed && dtSec > 0 && isValidGps && (lastGpsLat != 0.0 || lastGpsLon != 0.0)) {
             val dist = haversineDistance(lastGpsLat, lastGpsLon, latitude, longitude)
             finalSpeedMs = (dist / dtSec).takeIf { it.isFinite() } ?: 0.0
             derivedSpeed = true
@@ -176,11 +182,13 @@ class MotorcycleSensorFusionEngine(
         calibrator.processGpsSample(timestampMs, finalSpeedMs, finalLongAccelMs2, finalYawRateDegSec)
         
         lastGpsSpeedMs = finalSpeedMs
-        lastGpsLat = latitude
-        lastGpsLon = longitude
         lastGpsTimeMs = timestampMs
-        lastLat = latitude
-        lastLon = longitude
+        if (isValidGps) {
+            lastGpsLat = latitude
+            lastGpsLon = longitude
+            lastLat = latitude
+            lastLon = longitude
+        }
     }
 
     fun processLocation(location: Location) {
@@ -223,6 +231,8 @@ class MotorcycleSensorFusionEngine(
                     cornerMaxLateralG = currentLateralG
                     cornerExitAccelG = max(currentLongitudinalG, 0.0)
                     cornerMaxRollRate = abs(rollRateDeg)
+                    cornerApexLat = lastLat
+                    cornerApexLon = lastLon
                 }
             }
             CornerState.CORNER_CANDIDATE -> {
@@ -241,6 +251,8 @@ class MotorcycleSensorFusionEngine(
                     if (direction == "LEFT") leftCorners++ else rightCorners++
 
                     val cornerScore = min(100.0, max(0.0, (abs(cornerMaxLean) / 50.0) * 100.0))
+                    val apexLat = if (cornerApexLat != 0.0 || cornerApexLon != 0.0) cornerApexLat else lastLat
+                    val apexLon = if (cornerApexLat != 0.0 || cornerApexLon != 0.0) cornerApexLon else lastLon
 
                     val event = CornerEventEntity(
                         rideId = 0L,
@@ -254,8 +266,8 @@ class MotorcycleSensorFusionEngine(
                         exitAccelG = cornerExitAccelG,
                         maxRollRateDegPerSec = cornerMaxRollRate,
                         cornerScore = cornerScore,
-                        latitude = lastLat,
-                        longitude = lastLon
+                        latitude = apexLat,
+                        longitude = apexLon
                     )
                     cornerEventCallback(event)
 
@@ -268,6 +280,10 @@ class MotorcycleSensorFusionEngine(
     private fun updateCornerStats(rollRateDeg: Double) {
         if (abs(currentLeanAngleDeg) > abs(cornerMaxLean)) {
             cornerMaxLean = currentLeanAngleDeg
+            if (lastLat != 0.0 || lastLon != 0.0) {
+                cornerApexLat = lastLat
+                cornerApexLon = lastLon
+            }
         }
         cornerMaxBrakingG = min(cornerMaxBrakingG, currentLongitudinalG)
         cornerMaxLateralG = if (abs(currentLateralG) > abs(cornerMaxLateralG)) currentLateralG else cornerMaxLateralG
@@ -305,6 +321,8 @@ class MotorcycleSensorFusionEngine(
         cornerState = CornerState.STRAIGHT
         isAutoPaused = false
         lastStopStartTimeMs = 0L
+        cornerApexLat = 0.0
+        cornerApexLon = 0.0
         
         lastGpsTimeMs = 0L
         lastGpsSpeedMs = 0.0

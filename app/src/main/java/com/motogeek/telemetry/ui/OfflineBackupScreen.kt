@@ -20,7 +20,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.motogeek.telemetry.domain.maintenance.ImportPreviewPlan
 import com.motogeek.telemetry.domain.maintenance.RestoreMode
+import com.motogeek.telemetry.ui.components.GuidedImportDialog
 import com.motogeek.telemetry.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -30,24 +32,38 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val activeBike by viewModel.activeMotorcycle.collectAsState()
+    val allBikes by viewModel.allMotorcycles.collectAsState()
+    val appLang = LocalAppLang.current
 
     var selectedRestoreMode by remember { mutableStateOf(RestoreMode.MERGE) }
     var hasSafetySnapshot by remember { mutableStateOf(viewModel.importExportManager.hasPreRestoreSnapshot()) }
 
+    var pendingPlan by remember { mutableStateOf<ImportPreviewPlan?>(null) }
+    var isImportingPlan by remember { mutableStateOf(false) }
+    var showReplaceConfirmDialog by remember { mutableStateOf(false) }
+    var pendingReplaceUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showRestoreSnapshotConfirmDialog by remember { mutableStateOf(false) }
+
     // SAF Import Launcher (Supports Local Storage, Google Drive, Nextcloud, Dropbox, etc.)
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            scope.launch {
-                val res = viewModel.importExportManager.importGarageBackup(uri, activeBike?.id, selectedRestoreMode)
-                hasSafetySnapshot = viewModel.importExportManager.hasPreRestoreSnapshot()
-                if (res.isSuccess) {
-                    val s = res.getOrNull()
-                    snackbarHostState.showSnackbar(
-                        "Import Successful! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks, ${s?.logsImported ?: 0} service logs, ${s?.ridesImported ?: 0} rides."
-                    )
-                } else {
-                    snackbarHostState.showSnackbar("Import Error: ${res.exceptionOrNull()?.message}")
+            if (selectedRestoreMode == RestoreMode.MERGE) {
+                scope.launch {
+                    val planRes = viewModel.importExportManager.analyzeJsonFile(uri)
+                    if (planRes.isSuccess) {
+                        pendingPlan = planRes.getOrNull()
+                    } else {
+                        snackbarHostState.showSnackbar(
+                            if (appLang == AppLang.SK)
+                                "Chyba analýzy JSON súboru: ${planRes.exceptionOrNull()?.message}"
+                            else
+                                "Failed to analyze JSON file: ${planRes.exceptionOrNull()?.message}"
+                        )
+                    }
                 }
+            } else {
+                pendingReplaceUri = uri
+                showReplaceConfirmDialog = true
             }
         }
     }
@@ -58,15 +74,19 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
             scope.launch {
                 val res = viewModel.importExportManager.exportGarageBackup(uri)
                 if (res.isSuccess) {
-                    snackbarHostState.showSnackbar("Garage backup exported successfully!")
+                    snackbarHostState.showSnackbar(
+                        if (appLang == AppLang.SK) "Záloha garáže bola úspešne exportovaná!"
+                        else "Garage backup exported successfully!"
+                    )
                 } else {
-                    snackbarHostState.showSnackbar("Export Error: ${res.exceptionOrNull()?.message}")
+                    snackbarHostState.showSnackbar(
+                        if (appLang == AppLang.SK) "Chyba exportu: ${res.exceptionOrNull()?.message}"
+                        else "Export Error: ${res.exceptionOrNull()?.message}"
+                    )
                 }
             }
         }
     }
-
-
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -90,7 +110,6 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                     }
                 },
                 actions = {
-                    val appLang = LocalAppLang.current
                     TextButton(onClick = { viewModel.toggleAppLanguage() }) {
                         Text(
                             text = if (appLang == AppLang.EN) "EN ▸ SK" else "SK ▸ EN",
@@ -115,11 +134,10 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
         ) {
             Spacer(modifier = Modifier.height(2.dp))
 
+            Spacer(modifier = Modifier.height(16.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                GoogleDriveCloudSyncCard(viewModel = viewModel, snackbarHostState = snackbarHostState)
-                
+            GoogleDriveCloudSyncCard(viewModel = viewModel, snackbarHostState = snackbarHostState)
+
             // Section 1: Backup & Restore Actions Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -129,7 +147,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "GARAGE DATA STORAGE & RESTORE",
+                        text = tr("GARAGE DATA STORAGE & RESTORE", "ZÁLOHA A OBNOVENIE GARÁŽE"),
                         color = Color(0xFF6B7A99),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -137,7 +155,10 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Full garage backup v2 includes all motorcycles, schedules, torques, service checklists, fuel & part logs, reminders, and GPS ride sessions.",
+                        text = tr(
+                            "Full garage backup v2 includes all motorcycles, schedules, torques, service checklists, fuel & part logs, reminders, and GPS ride sessions.",
+                            "Kompletná záloha v2 obsahuje všetky motocykle, plány, uťahovacie momenty, servisné checklisty, tankovania, diely, pripomienky a GPS jazdy."
+                        ),
                         color = Color.Gray,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
@@ -152,7 +173,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                         FilterChip(
                             selected = selectedRestoreMode == RestoreMode.MERGE,
                             onClick = { selectedRestoreMode = RestoreMode.MERGE },
-                            label = { Text("Import Mode: Merge (Safe)", fontSize = 11.sp) },
+                            label = { Text(tr("Import Mode: Merge (Safe)", "Režim importu: Zlúčiť (Bezpečné)"), fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = TelemetryIceCyan.copy(alpha = 0.2f),
                                 selectedLabelColor = TelemetryIceCyan
@@ -161,7 +182,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                         FilterChip(
                             selected = selectedRestoreMode == RestoreMode.REPLACE,
                             onClick = { selectedRestoreMode = RestoreMode.REPLACE },
-                            label = { Text("Replace Garage", fontSize = 11.sp) },
+                            label = { Text(tr("Replace Garage", "Nahradiť garáž"), fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = RacingAmberPrimary.copy(alpha = 0.2f),
                                 selectedLabelColor = RacingAmberPrimary
@@ -178,43 +199,48 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                     ) {
                         Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Export Garage to JSON (Local / Cloud Drive)", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = tr("Export Garage to JSON (Local / Cloud Drive)", "Exportovať garáž do JSON (Lokálne / Cloud)"),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Import JSON File Button
+                    // Import JSON File Button (SAF with application/json, text/*, */*)
                     OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/json", "text/*")) },
+                        onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, TitaniumBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.FileOpen, contentDescription = null, tint = TelemetryIceCyan, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Import JSON Backup File (${selectedRestoreMode.name})", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = tr(
+                                "Import JSON Backup File (${if (selectedRestoreMode == RestoreMode.MERGE) "Merge" else "Replace"})",
+                                "Importovať JSON zálohu (${if (selectedRestoreMode == RestoreMode.MERGE) "Zlúčenie" else "Nahradenie"})"
+                            ),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     if (hasSafetySnapshot) {
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedButton(
-                            onClick = {
-                                scope.launch {
-                                    val res = viewModel.importExportManager.restoreLastSafetySnapshot()
-                                    if (res.isSuccess) {
-                                        snackbarHostState.showSnackbar("Safety Snapshot Restored Successfully!")
-                                    } else {
-                                        snackbarHostState.showSnackbar("Snapshot Restore Failed: ${res.exceptionOrNull()?.message}")
-                                    }
-                                }
-                            },
+                            onClick = { showRestoreSnapshotConfirmDialog = true },
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(1.dp, WarningGold),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Restore, contentDescription = null, tint = WarningGold, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Undo Last Replace (Restore Safety Snapshot)", color = WarningGold, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = tr("Undo Last Replace (Restore Safety Snapshot)", "Vrátiť nahradenie (Obnoviť bezpečnú zálohu)"),
+                                color = WarningGold,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -222,6 +248,168 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
 
             Spacer(modifier = Modifier.height(30.dp))
         }
+    }
+
+    // Guided Non-Destructive Import Dialog
+    if (pendingPlan != null) {
+        GuidedImportDialog(
+            plan = pendingPlan!!,
+            existingBikes = allBikes,
+            isImporting = isImportingPlan,
+            onDismiss = { pendingPlan = null },
+            onConfirm = { selection ->
+                scope.launch {
+                    isImportingPlan = true
+                    val res = viewModel.importExportManager.executeGuidedImport(
+                        plan = pendingPlan!!,
+                        selection = selection,
+                        langCode = appLang.code
+                    )
+                    isImportingPlan = false
+                    pendingPlan = null
+                    hasSafetySnapshot = viewModel.importExportManager.hasPreRestoreSnapshot()
+                    if (res.isSuccess) {
+                        val s = res.getOrNull()
+                        snackbarHostState.showSnackbar(
+                            if (appLang == AppLang.SK)
+                                "Import dokončený! ${s?.motorcyclesImported ?: 0} motocyklov, ${s?.tasksImported ?: 0} úloh, ${s?.logsImported ?: 0} servisov, ${s?.fuelLogsImported ?: 0} tankovaní, ${s?.ridesImported ?: 0} jázd."
+                            else
+                                "Import Successful! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks, ${s?.logsImported ?: 0} service logs, ${s?.fuelLogsImported ?: 0} fuel logs, ${s?.ridesImported ?: 0} rides."
+                        )
+                    } else {
+                        snackbarHostState.showSnackbar(
+                            if (appLang == AppLang.SK) "Chyba importu: ${res.exceptionOrNull()?.message}"
+                            else "Import Error: ${res.exceptionOrNull()?.message}"
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    // Replace Garage Warning Dialog
+    if (showReplaceConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showReplaceConfirmDialog = false
+                pendingReplaceUri = null
+            },
+            containerColor = TftSurfaceDark,
+            title = {
+                Text(
+                    text = tr("Replace Entire Garage?", "Nahradiť celú garáž?"),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = tr(
+                        "Warning: Replace mode will wipe all current motorcycles, service logs, and telemetry data and replace them with this backup. A pre-restore safety snapshot will be created automatically before wiping so you can undo.",
+                        "Upozornenie: Režim nahradenia vymaže všetky súčasné motocykle, servisné záznamy a telemetriu a nahradí ich touto zálohou. Pred zmazaním sa automaticky vytvorí bezpečnostná záloha na vrátenie zmien."
+                    ),
+                    color = Color.LightGray,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val uri = pendingReplaceUri
+                        showReplaceConfirmDialog = false
+                        pendingReplaceUri = null
+                        if (uri != null) {
+                            scope.launch {
+                                val res = viewModel.importExportManager.importGarageBackup(uri, activeBike?.id, RestoreMode.REPLACE)
+                                hasSafetySnapshot = viewModel.importExportManager.hasPreRestoreSnapshot()
+                                if (res.isSuccess) {
+                                    val s = res.getOrNull()
+                                    snackbarHostState.showSnackbar(
+                                        if (appLang == AppLang.SK)
+                                            "Garáž úspešne nahradená! ${s?.motorcyclesImported ?: 0} motocyklov, ${s?.tasksImported ?: 0} úloh, ${s?.logsImported ?: 0} servisov, ${s?.ridesImported ?: 0} jázd."
+                                        else
+                                            "Garage Replaced Successfully! ${s?.motorcyclesImported ?: 0} bikes, ${s?.tasksImported ?: 0} tasks, ${s?.logsImported ?: 0} service logs, ${s?.ridesImported ?: 0} rides."
+                                    )
+                                } else {
+                                    snackbarHostState.showSnackbar(
+                                        if (appLang == AppLang.SK) "Chyba nahradenia: ${res.exceptionOrNull()?.message}"
+                                        else "Replace Error: ${res.exceptionOrNull()?.message}"
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RedlineCrimson)
+                ) {
+                    Text(tr("Replace Garage", "Nahradiť garáž"), color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showReplaceConfirmDialog = false
+                        pendingReplaceUri = null
+                    }
+                ) {
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
+                }
+            }
+        )
+    }
+
+    // Safety Snapshot Undo Confirmation Dialog
+    if (showRestoreSnapshotConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreSnapshotConfirmDialog = false },
+            containerColor = TftSurfaceDark,
+            title = {
+                Text(
+                    text = tr("Restore Safety Snapshot?", "Obnoviť bezpečnostnú zálohu?"),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = tr(
+                        "This will revert your garage to the snapshot automatically saved immediately before the last Replace operation. All data created since then will be reverted.",
+                        "Týmto obnovíte garáž zo zálohy vytvorenej tesne pred poslednou operáciou nahradenia. Údaje vytvorené odvtedy budú vrátené."
+                    ),
+                    color = Color.LightGray,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRestoreSnapshotConfirmDialog = false
+                        scope.launch {
+                            val res = viewModel.importExportManager.restoreLastSafetySnapshot()
+                            hasSafetySnapshot = viewModel.importExportManager.hasPreRestoreSnapshot()
+                            if (res.isSuccess) {
+                                snackbarHostState.showSnackbar(
+                                    if (appLang == AppLang.SK) "Bezpečnostná záloha úspešne obnovená!"
+                                    else "Safety Snapshot Restored Successfully!"
+                                )
+                            } else {
+                                snackbarHostState.showSnackbar(
+                                    if (appLang == AppLang.SK) "Obnovenie zálohy zlyhalo: ${res.exceptionOrNull()?.message}"
+                                    else "Snapshot Restore Failed: ${res.exceptionOrNull()?.message}"
+                                )
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WarningGold)
+                ) {
+                    Text(tr("Restore Snapshot", "Obnoviť zálohu"), color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreSnapshotConfirmDialog = false }) {
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
+                }
+            }
+        )
     }
 }
 
@@ -368,16 +556,23 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.CloudSync, contentDescription = null, tint = ApexAmber, modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Google Drive Cloud Backup", color = ApexAmber, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(tr("Google Drive Cloud Backup", "Google Drive Cloudová záloha"), color = ApexAmber, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             accountError?.let {
                 Text(it, color = ApexAmber, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(8.dp))
             }
             if (googleAccount == null || !viewModel.googleAuthManager.hasDriveAccess(googleAccount)) {
-                Text("Sign in or create a Google account to back up your garage and service history. Allow Drive access when asked.", color = Color.LightGray, fontSize = 14.sp)
+                Text(
+                    text = tr(
+                        "Sign in or create a Google account to back up your garage and service history. Allow Drive access when asked.",
+                        "Prihláste sa k účtu Google pre zálohovanie garáže a servisnej histórie. Povoľte prístup k Disku Google."
+                    ),
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = launchSignIn,
@@ -392,19 +587,40 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         tint = DarkCharcoalBg
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isSigningIn) "Connecting…" else if (googleAccount != null) "Allow Google Drive access" else "Sign in / Sign up with Google", color = DarkCharcoalBg, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (isSigningIn) tr("Connecting…", "Pripája sa…")
+                        else if (googleAccount != null) tr("Allow Google Drive access", "Povoliť prístup k Disku Google")
+                        else tr("Sign in / Sign up with Google", "Prihlásiť sa cez Google"),
+                        color = DarkCharcoalBg,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             } else {
-                Text("Signed in as: ${googleAccount?.email ?: googleAccount?.displayName}", color = Color.LightGray, fontSize = 14.sp)
+                Text(
+                    text = tr(
+                        "Signed in as: ${googleAccount?.email ?: googleAccount?.displayName}",
+                        "Prihlásený ako: ${googleAccount?.email ?: googleAccount?.displayName}"
+                    ),
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 if (lastCloudBackupTime > 0) {
                     val timeStr = java.time.Instant.ofEpochMilli(lastCloudBackupTime)
                         .atZone(java.time.ZoneId.systemDefault())
                         .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-                    Text("Last cloud backup: $timeStr", color = ApexAmber, fontSize = 12.sp)
+                    Text(
+                        text = tr("Last cloud backup: $timeStr", "Posledná cloud záloha: $timeStr"),
+                        color = ApexAmber,
+                        fontSize = 12.sp
+                    )
                 } else {
-                    Text("Last cloud backup: Never", color = Color.LightGray, fontSize = 12.sp)
+                    Text(
+                        text = tr("Last cloud backup: Never", "Posledná cloud záloha: Nikdy"),
+                        color = Color.LightGray,
+                        fontSize = 12.sp
+                    )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -434,7 +650,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         if (isBackingUp) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                         } else {
-                            Text("Backup to Drive", color = Color.White, fontSize = 12.sp)
+                            Text(tr("Backup to Drive", "Zálohovať na Disk"), color = Color.White, fontSize = 12.sp)
                         }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -448,11 +664,10 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         if (isRestoring) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = ApexAmber, strokeWidth = 2.dp)
                         } else {
-                            Text("Restore from Drive", fontSize = 12.sp)
+                            Text(tr("Restore from Drive", "Obnoviť z Disku"), fontSize = 12.sp)
                         }
                     }
                 }
-                
             }
             if (googleAccount != null) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -478,7 +693,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                     enabled = !isBusy,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
                 ) {
-                    Text(if (isSigningOut) "Signing out…" else "Sign out")
+                    Text(if (isSigningOut) tr("Signing out…", "Odhlasovanie…") else tr("Sign out", "Odhlásiť sa"))
                 }
             }
         }
@@ -488,11 +703,11 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
         var cloudRestoreMode by remember { mutableStateOf(RestoreMode.MERGE) }
         AlertDialog(
             onDismissRequest = { showRestoreConfirm = false },
-            title = { Text("Restore from Cloud?", color = Color.White) },
+            title = { Text(tr("Restore from Cloud?", "Obnoviť z cloudu?"), color = Color.White) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Choose how to restore your Google Drive garage backup:",
+                        tr("Choose how to restore your Google Drive garage backup:", "Zvoľte spôsob obnovenia zálohy z Disku Google:"),
                         color = Color.LightGray,
                         fontSize = 13.sp
                     )
@@ -500,17 +715,20 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                         FilterChip(
                             selected = cloudRestoreMode == RestoreMode.MERGE,
                             onClick = { cloudRestoreMode = RestoreMode.MERGE },
-                            label = { Text("Merge (Safe)", fontSize = 12.sp) }
+                            label = { Text(tr("Merge (Safe)", "Zlúčiť (Bezpečné)"), fontSize = 12.sp) }
                         )
                         FilterChip(
                             selected = cloudRestoreMode == RestoreMode.REPLACE,
                             onClick = { cloudRestoreMode = RestoreMode.REPLACE },
-                            label = { Text("Replace Garage", fontSize = 12.sp) }
+                            label = { Text(tr("Replace Garage", "Nahradiť garáž"), fontSize = 12.sp) }
                         )
                     }
                     if (cloudRestoreMode == RestoreMode.REPLACE) {
                         Text(
-                            "A pre-restore safety snapshot of your current local garage will be saved automatically before replacing.",
+                            tr(
+                                "A pre-restore safety snapshot of your current local garage will be saved automatically before replacing.",
+                                "Pred nahradením sa automaticky vytvorí bezpečnostná záloha lokálnej garáže."
+                            ),
                             color = ApexAmber,
                             fontSize = 11.sp
                         )
@@ -541,11 +759,11 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                     enabled = !isBusy && viewModel.googleAuthManager.hasDriveAccess(googleAccount),
                     colors = ButtonDefaults.buttonColors(containerColor = RacingRed)
                 ) {
-                    Text("Confirm Restore", color = Color.White)
+                    Text(tr("Confirm Restore", "Potvrdiť obnovenie"), color = Color.White)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRestoreConfirm = false }) { Text("Cancel", color = ApexAmber) }
+                TextButton(onClick = { showRestoreConfirm = false }) { Text(tr("Cancel", "Zrušiť"), color = ApexAmber) }
             }
         )
     }

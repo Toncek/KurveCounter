@@ -28,7 +28,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
 import com.motogeek.telemetry.service.TelemetryForegroundService
 import com.motogeek.telemetry.ui.*
 import com.motogeek.telemetry.ui.theme.AppLang
@@ -128,7 +130,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Scaffold(
                             topBar = {
-                                if (currentRoute == "home" || currentRoute == null || currentRoute == "cockpit" || currentRoute == "history") {
+                                if (currentRoute == "home" || currentRoute == null || currentRoute == "cockpit") {
                                     @OptIn(ExperimentalMaterial3Api::class)
                                     TopAppBar(
                                         title = {
@@ -142,7 +144,6 @@ class MainActivity : ComponentActivity() {
                                                 )
                                                 val subTitle = when (currentRoute) {
                                                     "cockpit" -> tr(" // COCKPIT", " // KOKPIT")
-                                                    "history" -> tr(" // HISTORY", " // HISTÓRIA")
                                                     else -> " // TFT"
                                                 }
                                                 Text(
@@ -155,7 +156,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
                                         navigationIcon = {
-                                            if (currentRoute == "cockpit" || currentRoute == "history") {
+                                            if (currentRoute == "cockpit") {
                                                 IconButton(onClick = { navController.navigate("home") { popUpTo("home") { inclusive = false } } }) {
                                                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
                                                 }
@@ -230,7 +231,26 @@ class MainActivity : ComponentActivity() {
                                     onStopRide = { stopRideService() }
                                 )
                             }
-                            composable("history") { TelemetryHistoryScreen(viewModel) }
+                            composable(
+                                route = "history?rideId={rideId}",
+                                arguments = listOf(
+                                    navArgument("rideId") {
+                                        type = NavType.LongType
+                                        defaultValue = -1L
+                                    }
+                                )
+                            ) { backStackEntry ->
+                                val initialRideId = backStackEntry.arguments?.getLong("rideId")?.takeIf { it > 0L }
+                                TelemetryHistoryScreen(
+                                    viewModel = viewModel,
+                                    initialRideId = initialRideId,
+                                    onBack = {
+                                        if (!navController.popBackStack()) {
+                                            navController.navigate("home")
+                                        }
+                                    }
+                                )
+                            }
                             composable("maintenance") { MaintenanceServiceScreen(viewModel, navController) }
                             composable("garage") { BikeInfoScreen(viewModel, navController) }
                             composable("settings") { BikeInfoScreen(viewModel, navController) }

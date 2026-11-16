@@ -7,6 +7,7 @@ import com.motogeek.telemetry.data.local.*
 import com.motogeek.telemetry.domain.maintenance.ImportExportManager
 import com.motogeek.telemetry.domain.maintenance.MaintenanceEvaluator
 import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
+import com.motogeek.telemetry.domain.maintenance.ServiceTaskDeduplicator
 import com.motogeek.telemetry.service.LiveTelemetryState
 import com.motogeek.telemetry.service.RideSimulatorEngine
 import com.motogeek.telemetry.service.TelemetryForegroundService
@@ -29,7 +30,12 @@ data class FuelEconomyStats(
     val bestLitersPer100Km: Double = 0.0,
     val totalLiters: Double = 0.0,
     val totalFuelCost: Double = 0.0,
-    val totalFuelDistanceKm: Double = 0.0
+    val totalFuelDistanceKm: Double = 0.0,
+    val totalFuelLiters: Double = totalLiters,
+    val avgPricePerLiter: Double = 0.0,
+    val totalFuelSpent: Double = totalFuelCost,
+    val trackedSpanKm: Double = totalFuelDistanceKm,
+    val fillCount: Int = 0
 )
 
 data class TcoStats(
@@ -40,8 +46,347 @@ data class TcoStats(
     val totalCost: Double = 0.0,
     val totalDistanceKm: Double = 0.0,
     val costPerKm: Double = 0.0,
-    val currency: String = "€"
+    val currency: String = "€",
+    val serviceCost: Double = totalServiceCost,
+    val partsCost: Double = totalPartsCost,
+    val fuelCost: Double = totalFuelCost,
+    val totalOperatingCost: Double = totalFuelCost + totalPartsCost + totalServiceCost,
+    val totalInvestment: Double = totalCost,
+    val ownedDistanceKm: Double = totalDistanceKm,
+    val costPerMonth: Double = 0.0
 )
+
+data class RiderAnalyticsSummary(
+    val totalRides: Int = 0,
+    val totalDistanceKm: Double = 0.0,
+    val totalDurationMs: Long = 0L,
+    val totalElevationGainM: Double = 0.0,
+    val maxSpeedKmh: Double = 0.0,
+    val avgSpeedWeightedKmh: Double = 0.0,
+    val peakLeanLeftDeg: Double = 0.0,
+    val peakLeanRightDeg: Double = 0.0,
+    val totalCorners: Int = 0,
+    val totalLeftCorners: Int = 0,
+    val totalRightCorners: Int = 0,
+    val avgCornerScore: Double = 0.0,
+    val avgTrailBrakingPct: Double = 0.0,
+    val peakLateralG: Double = 0.0,
+    val peakBrakingG: Double = 0.0,
+    val peakAccelG: Double = 0.0,
+    val peakTurnInRateDegPerSec: Double = 0.0,
+    val topLeanRide: RideSessionEntity? = null,
+    val fastestRide: RideSessionEntity? = null,
+    val longestRide: RideSessionEntity? = null
+)
+
+object RiderAnalyticsCalculator {
+    fun computeFuelEconomyStats(logs: List<FuelLogEntity>): FuelEconomyStats {
+        if (logs.isEmpty()) return FuelEconomyStats()
+
+        val totalLiters = logs.filter { it.liters.isFinite() && it.liters > 0.0 }.sumOf { it.liters }
+        val totalSpent = logs.filter { it.totalCost.isFinite() && it.totalCost > 0.0 }.sumOf { it.totalCost }
+        val avgPricePerLiter = if (totalLiters > 0.0 && totalSpent > 0.0) {
+            (totalSpent / totalLiters).takeIf { it.isFinite() } ?: 0.0
+        } else {
+            val validPrices = logs.filter { it.pricePerLiter.isFinite() && it.pricePerLiter > 0.0 }
+            if (validPrices.isNotEmpty()) validPrices.map { it.pricePerLiter }.average().takeIf { it.isFinite() } ?: 0.0 else 0.0
+        }
+
+        val sorted = logs
+            .filter { it.odometerKm.isFinite() && it.odometerKm > 0.0 && it.liters.isFinite() && it.liters > 0.0 }
+            .sortedBy { it.odometerKm }
+
+        if (sorted.size < 2) {
+            return FuelEconomyStats(
+                avgLitersPer100Km = 0.0,
+                avgKmPerLiter = 0.0,
+                bestLitersPer100Km = 0.0,
+                totalLiters = totalLiters,
+                totalFuelCost = totalSpent,
+                totalFuelDistanceKm = 0.0,
+                totalFuelLiters = totalLiters,
+                avgPricePerLiter = avgPricePerLiter,
+                totalFuelSpent = totalSpent,
+                trackedSpanKm = 0.0,
+                fillCount = logs.size
+            )
+        }
+
+        val totalOdoSpan = (sorted.last().odometerKm - sorted.first().odometerKm).coerceAtLeast(0.0)
+        val fullIndices = sorted.indices.filter { sorted[it].isFullTank }
+
+        var avgL100 = 0.0
+        val segmentEfficiencies = mutableListOf<Double>()
+
+        if (fullIndices.size >= 2) {
+            var sumSegmentDist = 0.0
+            var sumSegmentLiters = 0.0
+
+            for (k in 0 until fullIndices.size - 1) {
+                val startIdx = fullIndices[k]
+                val endIdx = fullIndices[k + 1]
+                val segDist = sorted[endIdx].odometerKm - sorted[startIdx].odometerKm
+                val segLiters = (startIdx + 1..endIdx).sumOf { sorted[it].liters }
+
+                if (segDist > 0.0 && segLiters > 0.0) {
+                    val eff = (segLiters / segDist) * 100.0
+                    if (eff.isFinite() && eff > 1.0 && eff < 30.0) {
+                        segmentEfficiencies.add(eff)
+                    }
+                    sumSegmentDist += segDist
+                    sumSegmentLiters += segLiters
+                }
+            }
+
+            if (sumSegmentDist > 0.0 && sumSegmentLiters > 0.0) {
+                avgL100 = ((sumSegmentLiters / sumSegmentDist) * 100.0).takeIf { it.isFinite() } ?: 0.0
+            }
+        }
+
+        // Fallback if < 2 full tanks or no segments could be calculated:
+        if (avgL100 <= 0.0 && totalOdoSpan > 0.0) {
+            val consumedLiters = sorted.drop(1).sumOf { it.liters }
+            if (consumedLiters > 0.0) {
+                avgL100 = ((consumedLiters / totalOdoSpan) * 100.0).takeIf { it.isFinite() } ?: 0.0
+            }
+
+            for (i in 0 until sorted.size - 1) {
+                val d = sorted[i + 1].odometerKm - sorted[i].odometerKm
+                val l = sorted[i + 1].liters
+                if (d > 0.0 && l > 0.0) {
+                    val eff = (l / d) * 100.0
+                    if (eff.isFinite() && eff > 1.0 && eff < 30.0) {
+                        segmentEfficiencies.add(eff)
+                    }
+                }
+            }
+        }
+
+        val bestL100 = if (segmentEfficiencies.isNotEmpty()) {
+            val minEff = segmentEfficiencies.minOrNull() ?: avgL100
+            if (avgL100 > 0.0) kotlin.math.min(avgL100, minEff) else minEff
+        } else avgL100
+
+        val avgKmL = if (avgL100 > 0.0) (100.0 / avgL100).takeIf { it.isFinite() } ?: 0.0 else 0.0
+
+        return FuelEconomyStats(
+            avgLitersPer100Km = avgL100,
+            avgKmPerLiter = avgKmL,
+            bestLitersPer100Km = bestL100,
+            totalLiters = totalLiters,
+            totalFuelCost = totalSpent,
+            totalFuelDistanceKm = totalOdoSpan,
+            totalFuelLiters = totalLiters,
+            avgPricePerLiter = avgPricePerLiter,
+            totalFuelSpent = totalSpent,
+            trackedSpanKm = totalOdoSpan,
+            fillCount = logs.size
+        )
+    }
+
+    private fun parseIsoToEpochMs(dateStr: String?): Long? {
+        if (dateStr.isNullOrBlank()) return null
+        val clean = dateStr.trim()
+        return try {
+            java.time.LocalDate.parse(clean).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        } catch (_: Exception) {
+            try {
+                val fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+                java.time.LocalDate.parse(clean, fmt).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+            } catch (_: Exception) {
+                try {
+                    val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd")
+                    java.time.LocalDate.parse(clean, fmt).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+                } catch (_: Exception) {
+                    try {
+                        val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd")
+                        java.time.LocalDate.parse(clean, fmt).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+                    } catch (_: Exception) {
+                        try {
+                            java.time.Instant.parse(clean).toEpochMilli()
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun computeTcoStats(
+        bike: MotorcycleEntity?,
+        fuelLogs: List<FuelLogEntity>,
+        serviceLogs: List<ServiceLogEntity>,
+        partLogs: List<PartLogEntity>,
+        rides: List<RideSessionEntity>,
+        nowMs: Long = System.currentTimeMillis()
+    ): TcoStats {
+        val purchasePrice = bike?.buyingPrice?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+        val fuelTotal = fuelLogs.filter { it.totalCost.isFinite() && it.totalCost > 0.0 }.sumOf { it.totalCost }
+        val partsTotal = partLogs.filter { it.cost.isFinite() && it.cost > 0.0 }.sumOf { it.cost }
+        val serviceTotal = serviceLogs.filter { it.costEur.isFinite() && it.costEur > 0.0 }.sumOf { it.costEur }
+        val operatingCost = fuelTotal + partsTotal + serviceTotal
+        val totalCost = purchasePrice + operatingCost
+
+        // Calculate owner-ridden distance
+        var ownerDistance = if (bike != null) {
+            (bike.totalOdometerKm - bike.baseOdometerKm).coerceAtLeast(0.0)
+        } else 0.0
+
+        if (ownerDistance < 1.0 && bike != null && bike.accumulatedTrackedKm >= 1.0) {
+            ownerDistance = bike.accumulatedTrackedKm
+        }
+
+        if (ownerDistance < 1.0) {
+            val validFuelOdo = fuelLogs.map { it.odometerKm }.filter { it.isFinite() && it > 0.0 }
+            if (validFuelOdo.size >= 2) {
+                val span = (validFuelOdo.maxOrNull()!! - validFuelOdo.minOrNull()!!).coerceAtLeast(0.0)
+                if (span >= 1.0) ownerDistance = span
+            }
+        }
+
+        if (ownerDistance < 1.0) {
+            val rideDistSum = rides.filter { it.distanceKm.isFinite() && it.distanceKm > 0.0 }.sumOf { it.distanceKm }
+            if (rideDistSum >= 1.0) ownerDistance = rideDistSum
+        }
+
+        val costPerKm = if (ownerDistance >= 1.0 && operatingCost > 0.0) {
+            (operatingCost / ownerDistance).takeIf { it.isFinite() } ?: 0.0
+        } else 0.0
+
+        // Find earliest timestamp
+        val candidateTimestamps = mutableListOf<Long>()
+        bike?.startDateIso?.let { parseIsoToEpochMs(it)?.let { ms -> if (ms in 1_000_000_000_000L..nowMs) candidateTimestamps.add(ms) } }
+        fuelLogs.forEach { parseIsoToEpochMs(it.dateIso)?.let { ms -> if (ms in 1_000_000_000_000L..nowMs) candidateTimestamps.add(ms) } }
+        serviceLogs.forEach { parseIsoToEpochMs(it.performedAtIsoDate)?.let { ms -> if (ms in 1_000_000_000_000L..nowMs) candidateTimestamps.add(ms) } }
+        partLogs.forEach { parseIsoToEpochMs(it.dateIso)?.let { ms -> if (ms in 1_000_000_000_000L..nowMs) candidateTimestamps.add(ms) } }
+        rides.forEach { if (it.startTimeEpochMs in 1_000_000_000_000L..nowMs) candidateTimestamps.add(it.startTimeEpochMs) }
+
+        val earliestMs = candidateTimestamps.minOrNull() ?: nowMs
+        val elapsedMs = (nowMs - earliestMs).coerceAtLeast(0L)
+        val elapsedDays = elapsedMs / (1000L * 60 * 60 * 24)
+        val elapsedMonths = (elapsedDays / 30.4375).coerceAtLeast(1.0)
+
+        val costPerMonth = if (operatingCost > 0.0) {
+            (operatingCost / elapsedMonths).takeIf { it.isFinite() } ?: 0.0
+        } else 0.0
+
+        val totalDist = bike?.totalOdometerKm?.takeIf { it.isFinite() && it > 0.0 } ?: ownerDistance
+
+        return TcoStats(
+            purchasePrice = purchasePrice,
+            totalFuelCost = fuelTotal,
+            totalPartsCost = partsTotal,
+            totalServiceCost = serviceTotal,
+            totalCost = totalCost,
+            totalDistanceKm = totalDist,
+            costPerKm = costPerKm,
+            currency = bike?.currencySymbol?.ifBlank { "€" } ?: "€",
+            serviceCost = serviceTotal,
+            partsCost = partsTotal,
+            fuelCost = fuelTotal,
+            totalOperatingCost = operatingCost,
+            totalInvestment = totalCost,
+            ownedDistanceKm = ownerDistance,
+            costPerMonth = costPerMonth
+        )
+    }
+
+    fun computeRiderAnalytics(rides: List<RideSessionEntity>): RiderAnalyticsSummary {
+        if (rides.isEmpty()) return RiderAnalyticsSummary()
+
+        val totalRides = rides.size
+        val totalDistanceKm = rides.filter { it.distanceKm.isFinite() && it.distanceKm > 0.0 }.sumOf { it.distanceKm }
+        val totalDurationMs = rides.map { (it.endTimeEpochMs - it.startTimeEpochMs).coerceAtLeast(0L) }.sum()
+        val totalElevationGainM = rides.filter { it.elevationGainMeters.isFinite() && it.elevationGainMeters > 0.0 }.sumOf { it.elevationGainMeters }
+
+        val maxSpeedKmh = rides.map { it.maxSpeedKmh }.filter { it.isFinite() && it > 0.0 }.maxOrNull() ?: 0.0
+
+        val validSpeedRides = rides.filter { it.distanceKm.isFinite() && it.distanceKm > 0.0 && it.avgSpeedKmh.isFinite() && it.avgSpeedKmh > 0.0 }
+        val totalDistForSpeed = validSpeedRides.sumOf { it.distanceKm }
+        val avgSpeedWeightedKmh = if (totalDistForSpeed > 0.0) {
+            (validSpeedRides.sumOf { it.distanceKm * it.avgSpeedKmh } / totalDistForSpeed).takeIf { it.isFinite() } ?: 0.0
+        } else {
+            val speedList = rides.filter { it.avgSpeedKmh.isFinite() && it.avgSpeedKmh > 0.0 }.map { it.avgSpeedKmh }
+            if (speedList.isNotEmpty()) speedList.average().takeIf { it.isFinite() } ?: 0.0 else 0.0
+        }
+
+        val peakLeanLeftDeg = rides.map { it.maxLeanLeftDeg }.filter { it.isFinite() && it > 0.0 }.maxOrNull() ?: 0.0
+        val peakLeanRightDeg = rides.map { it.maxLeanRightDeg }.filter { it.isFinite() && it > 0.0 }.maxOrNull() ?: 0.0
+
+        val totalLeftCorners = rides.sumOf { it.leftCornersCount.coerceAtLeast(0) }
+        val totalRightCorners = rides.sumOf { it.rightCornersCount.coerceAtLeast(0) }
+        var totalCorners = rides.sumOf { it.totalCornersCount.coerceAtLeast(0) }
+        if (totalCorners == 0 && (totalLeftCorners + totalRightCorners) > 0) {
+            totalCorners = totalLeftCorners + totalRightCorners
+        }
+
+        val scoredRides = rides.filter { it.avgCornerScore.isFinite() && it.avgCornerScore > 0.0 }
+        val avgCornerScore = if (scoredRides.isNotEmpty()) {
+            scoredRides.map { it.avgCornerScore }.average().takeIf { it.isFinite() } ?: 0.0
+        } else 0.0
+
+        val trailRides = rides.filter { it.trailBrakingScorePct.isFinite() && it.trailBrakingScorePct > 0.0 }
+        val avgTrailBrakingPct = if (trailRides.isNotEmpty()) {
+            trailRides.map { it.trailBrakingScorePct }.average().takeIf { it.isFinite() } ?: 0.0
+        } else 0.0
+
+        val peakLateralG = rides.map { it.maxLateralG }.filter { it.isFinite() && it > 0.0 }.maxOrNull() ?: 0.0
+        val peakBrakingG = rides.map { it.maxBrakingG }.filter { it.isFinite() && it > 0.0 }.maxOrNull() ?: 0.0
+        val peakAccelG = rides.map { it.maxAccelG }.filter { it.isFinite() && it > 0.0 }.maxOrNull() ?: 0.0
+        val peakTurnInRateDegPerSec = rides.map { it.maxTurnInRateDegPerSec }.filter { it.isFinite() && it > 0.0 }.maxOrNull() ?: 0.0
+
+        val topLeanRide = rides
+            .filter { (it.maxLeanLeftDeg.isFinite() && it.maxLeanLeftDeg > 0.0) || (it.maxLeanRightDeg.isFinite() && it.maxLeanRightDeg > 0.0) }
+            .maxByOrNull { kotlin.math.max(if (it.maxLeanLeftDeg.isFinite()) it.maxLeanLeftDeg else 0.0, if (it.maxLeanRightDeg.isFinite()) it.maxLeanRightDeg else 0.0) }
+
+        val fastestRide = rides
+            .filter { it.maxSpeedKmh.isFinite() && it.maxSpeedKmh > 0.0 }
+            .maxByOrNull { it.maxSpeedKmh }
+
+        val longestRide = rides
+            .filter { it.distanceKm.isFinite() && it.distanceKm > 0.0 }
+            .maxByOrNull { it.distanceKm }
+
+        return RiderAnalyticsSummary(
+            totalRides = totalRides,
+            totalDistanceKm = totalDistanceKm,
+            totalDurationMs = totalDurationMs,
+            totalElevationGainM = totalElevationGainM,
+            maxSpeedKmh = maxSpeedKmh,
+            avgSpeedWeightedKmh = avgSpeedWeightedKmh,
+            peakLeanLeftDeg = peakLeanLeftDeg,
+            peakLeanRightDeg = peakLeanRightDeg,
+            totalCorners = totalCorners,
+            totalLeftCorners = totalLeftCorners,
+            totalRightCorners = totalRightCorners,
+            avgCornerScore = avgCornerScore,
+            avgTrailBrakingPct = avgTrailBrakingPct,
+            peakLateralG = peakLateralG,
+            peakBrakingG = peakBrakingG,
+            peakAccelG = peakAccelG,
+            peakTurnInRateDegPerSec = peakTurnInRateDegPerSec,
+            topLeanRide = topLeanRide,
+            fastestRide = fastestRide,
+            longestRide = longestRide
+        )
+    }
+}
+
+fun computeFuelEconomyStats(logs: List<FuelLogEntity>): FuelEconomyStats =
+    RiderAnalyticsCalculator.computeFuelEconomyStats(logs)
+
+fun computeTcoStats(
+    bike: MotorcycleEntity?,
+    fuelLogs: List<FuelLogEntity>,
+    serviceLogs: List<ServiceLogEntity>,
+    partLogs: List<PartLogEntity>,
+    rides: List<RideSessionEntity>,
+    nowMs: Long = System.currentTimeMillis()
+): TcoStats = RiderAnalyticsCalculator.computeTcoStats(bike, fuelLogs, serviceLogs, partLogs, rides, nowMs)
+
+fun computeRiderAnalytics(rides: List<RideSessionEntity>): RiderAnalyticsSummary =
+    RiderAnalyticsCalculator.computeRiderAnalytics(rides)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -100,6 +445,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 applyTemplate(MotorcycleTemplateCatalog.universal)
             } else {
                 _showOnboarding.value = false
+                bikes.forEach {
+                    repository.deduplicateMaintenanceTasksForBike(it.id)
+                }
             }
         }
     }
@@ -141,51 +489,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Fuel Economy Stats Flow ---
     val fuelEconomyStats: StateFlow<FuelEconomyStats> = currentFuelLogs.map { logs ->
-        if (logs.isEmpty()) return@map FuelEconomyStats()
-
-        val totalLiters = logs.sumOf { it.liters }
-        val totalCost = logs.sumOf { it.totalCost }
-        val sorted = logs.filter { it.odometerKm > 0 }.sortedBy { it.odometerKm }
-
-        if (sorted.size >= 2) {
-            val totalDistance = sorted.last().odometerKm - sorted.first().odometerKm
-            val consumedLiters = sorted.drop(1).sumOf { it.liters }
-            val avgL100 = if (totalDistance > 0 && consumedLiters > 0) {
-                ((consumedLiters / totalDistance) * 100.0).takeIf { it.isFinite() } ?: 0.0
-            } else 0.0
-            val avgKmL = if (avgL100 > 0) (100.0 / avgL100).takeIf { it.isFinite() } ?: 0.0 else 0.0
-
-            val segmentEfficiencies = mutableListOf<Double>()
-            for (i in 0 until sorted.size - 1) {
-                val d = sorted[i + 1].odometerKm - sorted[i].odometerKm
-                val l = sorted[i + 1].liters
-                if (d > 0 && l > 0) {
-                    val eff = (l / d) * 100.0
-                    if (eff.isFinite() && eff > 1.0 && eff < 30.0) {
-                        segmentEfficiencies.add(eff)
-                    }
-                }
-            }
-            val best = segmentEfficiencies.minOrNull() ?: avgL100
-
-            FuelEconomyStats(
-                avgLitersPer100Km = avgL100,
-                avgKmPerLiter = avgKmL,
-                bestLitersPer100Km = best,
-                totalLiters = totalLiters,
-                totalFuelCost = totalCost,
-                totalFuelDistanceKm = totalDistance
-            )
-        } else {
-            FuelEconomyStats(
-                avgLitersPer100Km = 0.0,
-                avgKmPerLiter = 0.0,
-                bestLitersPer100Km = 0.0,
-                totalLiters = totalLiters,
-                totalFuelCost = totalCost,
-                totalFuelDistanceKm = 0.0
-            )
-        }
+        RiderAnalyticsCalculator.computeFuelEconomyStats(logs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FuelEconomyStats())
 
     // --- TCO Stats Flow ---
@@ -193,29 +497,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         activeMotorcycle,
         currentFuelLogs,
         currentPartLogs,
-        currentServiceLogs
-    ) { bike, fuelLogs, partLogs, serviceLogs ->
-        val purchasePrice = bike?.buyingPrice ?: 0.0
-        val fuelTotal = fuelLogs.sumOf { it.totalCost }
-        val partsTotal = partLogs.sumOf { it.cost }
-        val serviceTotal = serviceLogs.sumOf { it.costEur }
-        val totalCost = purchasePrice + fuelTotal + partsTotal + serviceTotal
-        val totalDistance = bike?.totalOdometerKm ?: 0.0
-        val costPerKm = if (totalDistance > 0) {
-            (totalCost / totalDistance).takeIf { it.isFinite() } ?: 0.0
-        } else 0.0
-
-        TcoStats(
-            purchasePrice = purchasePrice,
-            totalFuelCost = fuelTotal,
-            totalPartsCost = partsTotal,
-            totalServiceCost = serviceTotal,
-            totalCost = totalCost,
-            totalDistanceKm = totalDistance,
-            costPerKm = costPerKm,
-            currency = bike?.currencySymbol ?: "€"
-        )
+        currentServiceLogs,
+        currentRideSessions
+    ) { bike, fuelLogs, partLogs, serviceLogs, rides ->
+        RiderAnalyticsCalculator.computeTcoStats(bike, fuelLogs, serviceLogs, partLogs, rides)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TcoStats())
+
+    // --- Rider Analytics Flow ---
+    val riderAnalytics: StateFlow<RiderAnalyticsSummary> = currentRideSessions.map { rides ->
+        RiderAnalyticsCalculator.computeRiderAnalytics(rides)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RiderAnalyticsSummary())
 
     // --- Bike Management ---
     fun selectActiveMotorcycle(id: String) {
@@ -358,21 +649,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addServiceLog(serviceLog: ServiceLogEntity) {
         viewModelScope.launch {
-            repository.insertServiceLog(serviceLog)
-            syncOdometerMonotonicallyIfNeeded(serviceLog.motorcycleId, serviceLog.odometerAtServiceKm)
+            val existingTasks = repository.getMaintenanceTasksForMotorcycle(serviceLog.motorcycleId)
+            val remappedLog = ServiceTaskDeduplicator.remapServiceLog(serviceLog, existingTasks)
+            repository.insertServiceLog(remappedLog)
+            repository.deduplicateMaintenanceTasksForBike(serviceLog.motorcycleId)
+            syncOdometerMonotonicallyIfNeeded(remappedLog.motorcycleId, remappedLog.odometerAtServiceKm)
             repository.logActivity(
-                serviceLog.motorcycleId,
+                remappedLog.motorcycleId,
                 "SERVICE",
-                serviceLog.serviceTitle,
-                "Serviced at ${serviceLog.odometerAtServiceKm.toInt()} km"
+                remappedLog.serviceTitle,
+                "Serviced at ${remappedLog.odometerAtServiceKm.toInt()} km"
             )
         }
     }
 
     fun updateServiceLog(serviceLog: ServiceLogEntity) {
         viewModelScope.launch {
-            repository.updateServiceLog(serviceLog)
-            syncOdometerMonotonicallyIfNeeded(serviceLog.motorcycleId, serviceLog.odometerAtServiceKm)
+            val existingTasks = repository.getMaintenanceTasksForMotorcycle(serviceLog.motorcycleId)
+            val remappedLog = ServiceTaskDeduplicator.remapServiceLog(serviceLog, existingTasks)
+            repository.updateServiceLog(remappedLog)
+            repository.deduplicateMaintenanceTasksForBike(serviceLog.motorcycleId)
+            syncOdometerMonotonicallyIfNeeded(remappedLog.motorcycleId, remappedLog.odometerAtServiceKm)
         }
     }
 
@@ -383,6 +680,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun upsertMaintenanceTask(task: MaintenanceTaskEntity) {
         viewModelScope.launch {
             repository.insertMaintenanceTask(task)
+            repository.deduplicateMaintenanceTasksForBike(task.motorcycleId)
         }
     }
 
@@ -480,6 +778,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             repository.insertMaintenanceTasks(taskEntities)
+            repository.deduplicateMaintenanceTasksForBike(targetBikeId)
         }
     }
 
