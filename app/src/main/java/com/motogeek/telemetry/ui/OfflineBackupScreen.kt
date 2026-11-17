@@ -15,6 +15,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import com.motogeek.telemetry.domain.sync.DriveSyncScheduler
+import com.motogeek.telemetry.domain.sync.DriveSyncPhase
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -415,6 +418,9 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
 
 @Composable
 fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: SnackbarHostState?) {
+    val context = LocalContext.current
+    val syncStatus by DriveSyncScheduler.status.collectAsState()
+    var confirmSyncAccount by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val googleAccount by viewModel.googleAuthManager.account.collectAsState()
     var isSigningIn by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
@@ -487,7 +493,8 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
     val authorizationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         viewModel.googleAuthManager.refreshAccount()
         accountError = if (result.resultCode == android.app.Activity.RESULT_OK) {
-            "Drive access granted. Tap Backup or Restore again."
+            DriveSyncScheduler.enqueue(context, afterCurrent = true)
+            "Drive access granted. Sync queued."
         } else {
             "Drive access was cancelled. Allow access to back up or restore."
         }
@@ -545,7 +552,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
             accountError = "Unable to open Google sign-in. Check Google Play services and try again."
         }
     }
-    val isBusy = isBackingUp || isRestoring || isSigningIn || isSigningOut
+    val isBusy = isBackingUp || isRestoring || isSigningIn || isSigningOut || syncStatus.phase == DriveSyncPhase.SYNCING
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -604,6 +611,40 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                     color = Color.LightGray,
                     fontSize = 14.sp
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    tr("Automatic sync on app start and after changes. Offline changes sync when internet returns.",
+                        "Automatická synchronizácia pri spustení a po zmenách. Offline zmeny sa odošlú po obnovení internetu."),
+                    color = Color.LightGray, fontSize = 12.sp
+                )
+                val accountSync = syncStatus.takeIf { it.account == googleAccount?.email }
+                val syncLabel = when (accountSync?.phase) {
+                    DriveSyncPhase.SYNCING -> tr("Syncing devices…", "Synchronizujú sa zariadenia…")
+                    DriveSyncPhase.SYNCED -> tr("Garage synced with Google Drive", "Garáž synchronizovaná s Diskom Google")
+                    DriveSyncPhase.WAITING -> tr("Sync queued · waiting for connection or retry", "Synchronizácia čaká na pripojenie alebo opakovanie")
+                    DriveSyncPhase.NEEDS_PERMISSION -> tr("Google Drive permission required", "Vyžaduje sa povolenie Disku Google")
+                    DriveSyncPhase.ACCOUNT_MISMATCH -> tr("Confirm the new Google account to sync this garage", "Potvrďte nový účet Google pre synchronizáciu garáže")
+                    DriveSyncPhase.ERROR -> accountSync.message ?: tr("Sync failed", "Synchronizácia zlyhala")
+                    else -> tr("Automatic sync ready", "Automatická synchronizácia pripravená")
+                }
+                Text(syncLabel, color = TelemetryIceCyan, fontSize = 12.sp)
+                OutlinedButton(
+                    onClick = {
+                        val intent = accountSync?.authorizationIntent
+                        if (accountSync?.phase == DriveSyncPhase.ACCOUNT_MISMATCH) confirmSyncAccount = googleAccount?.email
+                        else if (intent != null) authorizationLauncher.launch(intent)
+                        else DriveSyncScheduler.enqueue(context, afterCurrent = true)
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(when (accountSync?.phase) {
+                        DriveSyncPhase.NEEDS_PERMISSION -> tr("Allow Drive sync", "Povoliť synchronizáciu")
+                        DriveSyncPhase.ACCOUNT_MISMATCH -> tr("Use this Google account", "Použiť tento účet Google")
+                        else -> tr("Sync now", "Synchronizovať teraz")
+                    })
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (lastCloudBackupTime > 0) {
@@ -697,6 +738,35 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                 }
             }
         }
+    }
+
+    confirmSyncAccount?.let { email ->
+        AlertDialog(
+            onDismissRequest = { confirmSyncAccount = null },
+            title = { Text(tr("Sync with this Google account?", "Synchronizovať s týmto účtom Google?")) },
+            text = { Text(tr(
+                "Your current garage will be merged with $email. Data already synced to the previous account stays there.",
+                "Vaša garáž sa zlúči s účtom $email. Údaje synchronizované s predchádzajúcim účtom tam zostanú."
+            )) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSyncAccount = null
+                    scope.launch {
+                        try {
+                            com.motogeek.telemetry.domain.sync.DriveSyncManager(context).confirmAccountChange(email)
+                            DriveSyncScheduler.enqueue(context, afterCurrent = true)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            accountError = e.message
+                        }
+                    }
+                }) { Text(tr("Use this account", "Použiť tento účet")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSyncAccount = null }) { Text(tr("Cancel", "Zrušiť")) }
+            }
+        )
     }
 
     if (showRestoreConfirm) {

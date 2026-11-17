@@ -55,6 +55,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.googleAuthManager.refreshAccount()
+        com.motogeek.telemetry.domain.sync.DriveSyncScheduler.enqueue(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -66,6 +72,7 @@ class MainActivity : ComponentActivity() {
             val appLang by viewModel.appLanguage.collectAsState()
             CompositionLocalProvider(LocalAppLang provides appLang) {
                 MotoGeekTelemetryTheme {
+                    com.motogeek.telemetry.ui.components.DriveSyncAuthorizationPrompt()
                     val navController = rememberNavController()
                     val showOnboarding by viewModel.showOnboarding.collectAsState()
                     val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)

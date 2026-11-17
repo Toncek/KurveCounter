@@ -19,9 +19,10 @@ import androidx.room.migration.Migration
         FuelLogEntity::class,
         PartLogEntity::class,
         ReminderEntity::class,
-        AppLogEntity::class
+        AppLogEntity::class,
+        CloudSyncStateEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class MotoGeekDatabase : RoomDatabase() {
@@ -30,6 +31,12 @@ abstract class MotoGeekDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: MotoGeekDatabase? = null
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS cloud_sync_state (accountEmail TEXT NOT NULL PRIMARY KEY, stateJson TEXT NOT NULL)")
+            }
+        }
 
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -47,7 +54,7 @@ abstract class MotoGeekDatabase : RoomDatabase() {
                     MotoGeekDatabase::class.java,
                     "motogeek_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

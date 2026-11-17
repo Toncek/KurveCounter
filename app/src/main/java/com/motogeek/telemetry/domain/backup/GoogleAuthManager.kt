@@ -42,8 +42,9 @@ class GoogleAuthManager(private val context: Context) {
             ?: data?.getStringExtra("authAccount")
             ?: data?.getStringExtra("accountName")
         if (!pickedEmail.isNullOrBlank()) {
-            prefs.edit().putString("signed_in_account_email", pickedEmail).apply()
+            prefs.edit().putString("signed_in_account_email", pickedEmail).putBoolean("signed_out", false).apply()
             refreshAccount()
+            com.motogeek.telemetry.domain.sync.DriveSyncScheduler.enqueue(context)
             return
         }
 
@@ -53,8 +54,9 @@ class GoogleAuthManager(private val context: Context) {
         }.getOrNull()
 
         if (googleAccount != null && !googleAccount.email.isNullOrBlank()) {
-            prefs.edit().putString("signed_in_account_email", googleAccount.email).apply()
+            prefs.edit().putString("signed_in_account_email", googleAccount.email).putBoolean("signed_out", false).apply()
             refreshAccount()
+            com.motogeek.telemetry.domain.sync.DriveSyncScheduler.enqueue(context)
             return
         }
 
@@ -77,6 +79,7 @@ class GoogleAuthManager(private val context: Context) {
     }
 
     fun getSignedInAccount(): SignedInGoogleAccount? {
+        if (prefs.getBoolean("signed_out", false)) return null
         val savedEmail = prefs.getString("signed_in_account_email", null)
         if (!savedEmail.isNullOrBlank()) {
             return SignedInGoogleAccount(
@@ -99,7 +102,8 @@ class GoogleAuthManager(private val context: Context) {
     }
 
     suspend fun signOut() {
-        prefs.edit().remove("signed_in_account_email").apply()
+        prefs.edit().remove("signed_in_account_email").putBoolean("signed_out", true).apply()
+        com.motogeek.telemetry.domain.sync.DriveSyncScheduler.cancel(context)
         runCatching { signInClient.signOut().await() }
         refreshAccount()
     }

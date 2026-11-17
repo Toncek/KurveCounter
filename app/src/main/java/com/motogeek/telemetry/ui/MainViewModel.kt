@@ -440,7 +440,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val bikes = repository.getAllMotorcycles().first()
-            if (bikes.isEmpty()) {
+            val startupPrefs = application.getSharedPreferences("garage_startup", android.content.Context.MODE_PRIVATE)
+            val firstGarage = !startupPrefs.getBoolean("initialized", false)
+            startupPrefs.edit().putBoolean("initialized", true).apply()
+            if (bikes.isEmpty() && firstGarage && googleAuthManager.getSignedInAccount() == null) {
                 _showOnboarding.value = true
                 applyTemplate(MotorcycleTemplateCatalog.universal)
             } else {

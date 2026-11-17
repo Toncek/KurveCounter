@@ -4,14 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.common.api.Scope
-import com.google.api.client.extensions.android.http.AndroidHttp
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.google.api.client.http.ByteArrayContent
-import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
-import com.google.api.services.drive.DriveScopes
 import com.motogeek.telemetry.domain.maintenance.ImportExportManager
 import com.motogeek.telemetry.domain.maintenance.RestoreMode
 import kotlinx.coroutines.CancellationException
@@ -36,8 +30,7 @@ class GoogleDriveBackupManager(
         }
 
     private fun currentAccountEmail(): String? =
-        prefs.getString("signed_in_account_email", null)
-            ?: GoogleSignIn.getLastSignedInAccount(context)?.email
+        GoogleAuthManager(context).getSignedInAccount()?.email
 
     private fun accountPreferenceKey(): String? =
         currentAccountEmail()?.let { "last_backup_timestamp_$it" }
@@ -45,24 +38,8 @@ class GoogleDriveBackupManager(
     private fun accountUriKey(): String? =
         currentAccountEmail()?.let { "cloud_backup_uri_$it" }
 
-    private fun getDriveService(): Drive? {
-        val account = GoogleSignIn.getLastSignedInAccount(context) ?: return null
-        if (!GoogleSignIn.hasPermissions(account, Scope(DriveScopes.DRIVE_APPDATA))) {
-            return null
-        }
-        val credential = GoogleAccountCredential.usingOAuth2(
-            context, listOf(DriveScopes.DRIVE_APPDATA)
-        )
-        credential.selectedAccount = account.account
-
-        return Drive.Builder(
-            AndroidHttp.newCompatibleTransport(),
-            GsonFactory.getDefaultInstance(),
-            credential
-        )
-            .setApplicationName("KurveCounter MotoGeek Telemetry")
-            .build()
-    }
+    private fun getDriveService(): Drive? =
+        currentAccountEmail()?.let { GoogleDriveClient.create(context, it) }
 
     suspend fun saveBackupToPickedUri(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -130,8 +107,7 @@ class GoogleDriveBackupManager(
                 ?: return@withContext Result.failure(Exception("Not signed in to Google Drive"))
 
             // 1. Try Google Drive REST API if authenticated
-            val googleAccount = GoogleSignIn.getLastSignedInAccount(context)
-            if (googleAccount != null && GoogleSignIn.hasPermissions(googleAccount, Scope(DriveScopes.DRIVE_APPDATA))) {
+            run {
                 val restResult = runCatching {
                     val drive = getDriveService() ?: error("Failed to initialize Google Drive service")
                     val jsonString = importExportManager.generateBackupJsonString()
@@ -159,6 +135,10 @@ class GoogleDriveBackupManager(
 
                     lastBackupTimestamp = Instant.now().toEpochMilli()
                     Unit
+                }
+                (restResult.exceptionOrNull() as? CancellationException)?.let { throw it }
+                if (restResult.exceptionOrNull() is com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException) {
+                    return@withContext Result.failure(restResult.exceptionOrNull()!!)
                 }
                 if (restResult.isSuccess) {
                     return@withContext Result.success(Unit)
@@ -204,8 +184,7 @@ class GoogleDriveBackupManager(
                 ?: return@withContext Result.failure(Exception("Not signed in to Google Drive"))
 
             // 1. Try Google Drive REST API if authenticated
-            val googleAccount = GoogleSignIn.getLastSignedInAccount(context)
-            if (googleAccount != null && GoogleSignIn.hasPermissions(googleAccount, Scope(DriveScopes.DRIVE_APPDATA))) {
+            run {
                 val restResult = runCatching {
                     val drive = getDriveService() ?: error("Failed to initialize Google Drive service")
                     val files = drive.files().list()
@@ -231,6 +210,10 @@ class GoogleDriveBackupManager(
                         throw (result.exceptionOrNull() ?: Exception("Failed to import restored data"))
                     }
                     Unit
+                }
+                (restResult.exceptionOrNull() as? CancellationException)?.let { throw it }
+                if (restResult.exceptionOrNull() is com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException) {
+                    return@withContext Result.failure(restResult.exceptionOrNull()!!)
                 }
                 if (restResult.isSuccess) {
                     return@withContext Result.success(Unit)
