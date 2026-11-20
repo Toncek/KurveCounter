@@ -441,6 +441,22 @@ class NewBikeTutorialTest {
             langCode = "en"
         )
         assertTrue(prompt.contains("2022 Kawasaki Z900 (948cc, Naked)"))
+        assertTrue(prompt.contains("If NO service manual is attached"))
+        assertTrue(prompt.contains("search the internet"))
+        assertTrue(prompt.contains("WARNING"))
+        assertTrue(prompt.contains("never copy example numbers"))
+
+        val promptSk = importExport.buildAiServiceManualPrompt(
+            make = "Kawasaki",
+            model = "Z900",
+            year = 2022,
+            engineDisplacementCc = 948,
+            type = "Naked",
+            langCode = "sk"
+        )
+        assertTrue(promptSk.contains("Slovenčina"))
+        assertTrue(promptSk.contains("If NO service manual is attached"))
+        assertTrue(promptSk.contains("WARNING"))
 
         val delegatedPrompt = importExport.buildAiServiceManualPrompt(
             MotorcycleEntity(

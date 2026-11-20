@@ -125,18 +125,20 @@ class ImportExportManager(private val context: Context, private val repository: 
                 "for a motorcycle."
         }
         val langInstruction = if (langCode.equals("sk", ignoreCase = true)) {
-            "Write all taskName and notes fields in Slovak (Slovenčina), keeping JSON keys and category names in English."
+            "When outputting JSON, write all taskName and notes fields in Slovak (Slovenčina), keeping JSON keys and category names in English. If no service manual is attached, ask the confirmation question and safety warning below in Slovak (Slovenčina)."
         } else {
-            "Write all taskName and notes fields in clear English."
+            "When outputting JSON, write all taskName and notes fields in clear English."
         }
         return """
-        You are an expert motorcycle mechanic. I am providing you with the service manual $bikeContext
+        You are an expert motorcycle mechanic preparing maintenance data $bikeContext
         $langInstruction
+        SOURCE CHECK (CRITICAL):
+        - If a service manual (PDF, document, or text) is attached or provided in this chat, extract values strictly from that manual.
+        - If NO service manual is attached or provided, STOP BEFORE generating any JSON and DO NOT guess values. Ask the user whether they want to attach their service manual or want you to search the internet for the values, together with a clear WARNING that values found on the internet (especially bolt tightening torques in Nm, fluid capacities, tire pressures, valve clearances, and service intervals) may be inaccurate, outdated, or from a different model year/region and must be verified against the official OEM service manual before performing mechanical work.
+        Wait for the user's reply if no service manual is attached. Once a service manual is provided OR the user explicitly confirms searching the internet, output ONLY raw JSON (no markdown blocks or extra text) in the strict schema below.
         Extract ALL available technical specs, fluid volumes (oil with/without filter, coolant L, fork oil ml, brake fluid), tire pressures/sizes, valve clearances, full boltTorquesNm map, and a complete maintenance schedule.
         Ensure every task's notes field contains detailed mechanic instructions including exact drain valve/bolt counts and locations, tightening torques in Nm, and fluid capacities in L/ml. Include specific tasks for coolant (e.g. 2 drain bolts—front water pump X Nm, side cylinder Y Nm, Z L required), oil, brakes, tires, chain, valves, spark plugs.
-        Extract periodic maintenance items, fluids specifications, and full bolt tightening torques into the JSON format provided. Include boltTorquesNm as a key-value map mapping bolt names to numeric torque values in Nm. Ensure oilCapacityLiters is numeric.
-        Please extract the maintenance schedule and technical specifications into the following strict JSON format.
-        Do NOT output any markdown blocks or extra text, only the raw JSON.
+        Extract periodic maintenance items, fluids specifications, and full bolt tightening torques into the JSON format provided. Include boltTorquesNm as a key-value map mapping bolt names to numeric torque values in Nm. Ensure oilCapacityLiters is numeric, and never copy example numbers from the template below if unknown (omit or use null).
 
         {
           "technicalSpecs": {
