@@ -156,7 +156,7 @@ fun BikeDataExportScreen(viewModel: MainViewModel, navController: NavController)
                 activeBike = activeBike,
                 allBikes = allBikes,
                 onBikeSelected = { viewModel.selectActiveMotorcycle(it) },
-                onAddNewBike = { navController.navigate("bike_info") },
+                onAddNewBike = { viewModel.startNewBikeTutorial() },
                 onSyncOdometer = { viewModel.updateActiveBikeOdometer(it) },
                 showOdometer = true
             )

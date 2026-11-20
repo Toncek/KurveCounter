@@ -88,10 +88,41 @@ class ImportExportManager(private val context: Context, private val repository: 
         bike: com.motogeek.telemetry.data.local.MotorcycleEntity?,
         langCode: String = "en"
     ): String {
-        val bikeContext = if (bike != null) {
-            "for a ${bike.year} ${bike.make} ${bike.model} (${bike.engineDisplacementCc}cc, ${bike.type})."
-        } else {
-            "for a motorcycle."
+        return buildAiServiceManualPrompt(
+            make = bike?.make.orEmpty(),
+            model = bike?.model.orEmpty(),
+            year = bike?.year,
+            engineDisplacementCc = bike?.engineDisplacementCc,
+            type = bike?.type.orEmpty(),
+            langCode = langCode
+        )
+    }
+
+    fun buildAiServiceManualPrompt(
+        make: String,
+        model: String,
+        year: Int?,
+        engineDisplacementCc: Int?,
+        type: String,
+        langCode: String = "en"
+    ): String {
+        val cleanYear = year?.takeIf { it > 0 }?.toString()
+        val cleanMake = make.trim().takeIf { it.isNotBlank() }
+        val cleanModel = model.trim().takeIf { it.isNotBlank() }
+        val cleanCc = engineDisplacementCc?.takeIf { it > 0 }?.let { "${it}cc" }
+        val cleanType = type.trim().takeIf { it.isNotBlank() }
+
+        val bikeIdentity = listOfNotNull(cleanYear, cleanMake, cleanModel).joinToString(" ")
+        val bikeDetails = listOfNotNull(cleanCc, cleanType).joinToString(", ")
+        val bikeContext = when {
+            bikeIdentity.isNotBlank() && bikeDetails.isNotBlank() ->
+                "for a $bikeIdentity ($bikeDetails)."
+            bikeIdentity.isNotBlank() ->
+                "for a $bikeIdentity."
+            bikeDetails.isNotBlank() ->
+                "for a motorcycle ($bikeDetails)."
+            else ->
+                "for a motorcycle."
         }
         val langInstruction = if (langCode.equals("sk", ignoreCase = true)) {
             "Write all taskName and notes fields in Slovak (Slovenčina), keeping JSON keys and category names in English."

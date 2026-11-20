@@ -80,7 +80,7 @@ data class TechnicalSpecsDto(
     val coolantCapacityLiters: Double? = null,
     val forkOilCapacityPerLegMl: Double? = null,
     val forkOilWeight: String = "",
-    val brakeFluidType: String = "DOT 4",
+    val brakeFluidType: String = "",
     val valveClearanceIntakeMm: String = "",
     val valveClearanceExhaustMm: String = "",
     val sparkPlugModel: String = "",
@@ -107,7 +107,8 @@ data class TechnicalSpecsDto(
     val motorcycleMake: String? = null,
     val motorcycleModel: String? = null,
     val boltTorquesNm: Map<String, Double>? = null,
-    val torquesNm: Map<String, Double>? = null
+    val torquesNm: Map<String, Double>? = null,
+    val purchaseCondition: String? = null
 ) {
     fun toConsolidatedTorqueMap(): Map<String, Double> {
         val map = linkedMapOf<String, Double>()

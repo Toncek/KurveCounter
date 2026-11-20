@@ -31,8 +31,11 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.motogeek.telemetry.domain.onboarding.TutorialStage
 import com.motogeek.telemetry.service.TelemetryForegroundService
 import com.motogeek.telemetry.ui.*
+import com.motogeek.telemetry.ui.components.AddMotorcycleTutorialDialog
+import com.motogeek.telemetry.ui.components.MaintenanceHistoryReviewDialog
 import com.motogeek.telemetry.ui.theme.AppLang
 import com.motogeek.telemetry.ui.theme.LocalAppLang
 import com.motogeek.telemetry.ui.theme.MotoGeekTelemetryTheme
@@ -75,6 +78,8 @@ class MainActivity : ComponentActivity() {
                     com.motogeek.telemetry.ui.components.DriveSyncAuthorizationPrompt()
                     val navController = rememberNavController()
                     val showOnboarding by viewModel.showOnboarding.collectAsState()
+                    val tutorialDraft by viewModel.tutorialDraft.collectAsState()
+                    val tutorialStatusMessage by viewModel.tutorialStatusMessage.collectAsState()
                     val activeBike by viewModel.activeMotorcycle.collectAsState(initial = null)
                     val allBikes by viewModel.repository.getAllMotorcycles().collectAsState(initial = emptyList())
 
@@ -94,11 +99,54 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             confirmButton = {
-                                Button(onClick = { viewModel.dismissOnboarding() }) {
+                                Button(
+                                    onClick = {
+                                        viewModel.dismissOnboarding()
+                                        viewModel.startNewBikeTutorial()
+                                    }
+                                ) {
+                                    Text(tr("Set Up My Motorcycle", "Nastaviť môj motocykel"))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { viewModel.dismissOnboarding() }) {
                                     Text(tr("Let's Ride!", "Poďme jazdiť!"))
                                 }
                             }
                         )
+                    }
+
+                    val activeTutorialDraft = tutorialDraft
+                    if (activeTutorialDraft != null && activeTutorialDraft.isOpen) {
+                        when (activeTutorialDraft.stage) {
+                            TutorialStage.BIKE_BASICS,
+                            TutorialStage.SPECS_AND_SCHEDULE -> {
+                                AddMotorcycleTutorialDialog(
+                                    draft = activeTutorialDraft,
+                                    statusMessage = tutorialStatusMessage,
+                                    onDraftChanged = { viewModel.updateTutorialDraft(it) },
+                                    onBuildPrompt = { draft -> viewModel.buildTutorialAiPrompt(draft, appLang.code) },
+                                    onApplyLlmJson = { rawJson -> viewModel.applyTutorialLlmJson(rawJson) },
+                                    onProceedToMaintenanceReview = { viewModel.proceedToMaintenanceReview() },
+                                    onSaveBikeOnly = { viewModel.saveTutorialBikeOnly() },
+                                    onDiscard = { deletePersisted -> viewModel.discardTutorial(deletePersisted) },
+                                    onMinimize = { viewModel.minimizeNewBikeTutorial() }
+                                )
+                            }
+                            TutorialStage.MAINTENANCE_REVIEW -> {
+                                MaintenanceHistoryReviewDialog(
+                                    draft = activeTutorialDraft,
+                                    onUpdateItem = { viewModel.updateTutorialMaintenanceReviewItem(it) },
+                                    onResetItem = { taskId -> viewModel.resetTutorialMaintenanceItemToExpected(taskId) },
+                                    onAddTask = { task, km, date, neverDone ->
+                                        viewModel.addTutorialMaintenanceTask(task, km, date, neverDone)
+                                    },
+                                    onSave = { viewModel.saveTutorialAndFinish() },
+                                    onDiscard = { deletePersisted -> viewModel.discardTutorial(deletePersisted) },
+                                    onMinimize = { viewModel.minimizeNewBikeTutorial() }
+                                )
+                            }
+                        }
                     }
 
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -114,7 +162,8 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { viewModel.repository.selectActiveMotorcycle(bikeId) }
                                 },
                                 onAddNewBike = {
-                                    navController.navigate("bike_info")
+                                    scope.launch { drawerState.close() }
+                                    viewModel.startNewBikeTutorial()
                                 },
                                 onSyncOdometer = { newKm ->
                                     viewModel.updateActiveBikeOdometer(newKm)

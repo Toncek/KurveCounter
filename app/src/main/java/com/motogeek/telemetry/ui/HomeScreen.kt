@@ -85,7 +85,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
             activeBike = activeBike,
             allBikes = allBikes,
             onBikeSelected = { bikeId -> viewModel.selectActiveMotorcycle(bikeId) },
-            onAddNewBike = { navController.navigate("bike_info") },
+            onAddNewBike = { viewModel.startNewBikeTutorial() },
             onSyncOdometer = { newKm -> viewModel.updateActiveBikeOdometer(newKm) },
             showOdometer = true
         )

@@ -6,8 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.motogeek.telemetry.data.local.*
 import com.motogeek.telemetry.domain.maintenance.ImportExportManager
 import com.motogeek.telemetry.domain.maintenance.MaintenanceEvaluator
+import com.motogeek.telemetry.domain.maintenance.MaintenanceTaskDto
 import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
 import com.motogeek.telemetry.domain.maintenance.ServiceTaskDeduplicator
+import com.motogeek.telemetry.domain.onboarding.BikePurchaseCondition
+import com.motogeek.telemetry.domain.onboarding.MaintenanceHistoryReviewItem
+import com.motogeek.telemetry.domain.onboarding.NewBikeTutorialCoordinator
+import com.motogeek.telemetry.domain.onboarding.NewBikeTutorialDraft
+import com.motogeek.telemetry.domain.onboarding.NewBikeTutorialDraftStore
+import com.motogeek.telemetry.domain.onboarding.ServiceBookBaselineCalculator
+import com.motogeek.telemetry.domain.onboarding.SharedPreferencesTutorialDraftPersistence
+import com.motogeek.telemetry.domain.onboarding.TutorialStage
 import com.motogeek.telemetry.service.LiveTelemetryState
 import com.motogeek.telemetry.service.RideSimulatorEngine
 import com.motogeek.telemetry.service.TelemetryForegroundService
@@ -17,11 +26,14 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.min
 
 data class FuelEconomyStats(
@@ -414,6 +426,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _showOnboarding = MutableStateFlow(false)
     val showOnboarding = _showOnboarding.asStateFlow()
 
+    private val tutorialDraftPersistence = SharedPreferencesTutorialDraftPersistence(application)
+    private val tutorialDraftStore = NewBikeTutorialDraftStore(tutorialDraftPersistence)
+    private val tutorialCoordinator: NewBikeTutorialCoordinator
+    private val tutorialMutex = Mutex()
+    private val tutorialEditVersion = AtomicLong(0L)
+
+    private val _tutorialDraft = MutableStateFlow<NewBikeTutorialDraft?>(null)
+    val tutorialDraft: StateFlow<NewBikeTutorialDraft?> = _tutorialDraft.asStateFlow()
+
+    val hasUnfinishedTutorialDraft: StateFlow<Boolean> = _tutorialDraft.map { draft ->
+        draft != null && !draft.isOpen && (draft.hasAnyUserInput() || !draft.persistedBikeId.isNullOrBlank())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _tutorialStatusMessage = MutableStateFlow<String?>(null)
+    val tutorialStatusMessage: StateFlow<String?> = _tutorialStatusMessage.asStateFlow()
+
     val activeMotorcycle: StateFlow<MotorcycleEntity?>
     val allMotorcycles: StateFlow<List<MotorcycleEntity>>
     val allRides: Flow<List<RideSessionEntity>>
@@ -423,6 +451,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository = MotoGeekRepository(db.motoGeekDao())
         importExportManager = ImportExportManager(application, repository)
         googleDriveBackupManager = com.motogeek.telemetry.domain.backup.GoogleDriveBackupManager(application, importExportManager)
+        tutorialCoordinator = NewBikeTutorialCoordinator(repository, tutorialDraftStore)
 
         activeMotorcycle = repository.getActiveMotorcycleFlow().stateIn(
             scope = viewModelScope,
@@ -439,6 +468,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         allRides = repository.getAllRideSessions()
 
         viewModelScope.launch {
+            tutorialMutex.withLock {
+                val restored = tutorialDraftStore.loadDraft()
+                if (restored != null) {
+                    if (restored.isOpen || restored.hasAnyUserInput() || !restored.persistedBikeId.isNullOrBlank()) {
+                        _tutorialDraft.value = restored
+                    } else {
+                        tutorialDraftStore.clearDraft()
+                    }
+                }
+            }
+
             val bikes = repository.getAllMotorcycles().first()
             val startupPrefs = application.getSharedPreferences("garage_startup", android.content.Context.MODE_PRIVATE)
             val firstGarage = !startupPrefs.getBoolean("initialized", false)
@@ -457,6 +497,273 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissOnboarding() {
         _showOnboarding.value = false
+    }
+
+    // --- New Motorcycle Onboarding Tutorial ---
+    fun buildTutorialAiPrompt(draft: NewBikeTutorialDraft, langCode: String): String {
+        return importExportManager.buildAiServiceManualPrompt(
+            make = draft.make,
+            model = draft.model,
+            year = draft.yearText.trim().toIntOrNull(),
+            engineDisplacementCc = draft.engineDisplacementCcText.trim().toIntOrNull(),
+            type = draft.bikeType,
+            langCode = langCode
+        )
+    }
+
+    fun clearTutorialStatusMessage() {
+        _tutorialStatusMessage.value = null
+    }
+
+    fun startNewBikeTutorial() {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                tutorialEditVersion.incrementAndGet()
+                _tutorialStatusMessage.value = null
+                val started = tutorialCoordinator.startOrResume()
+                _tutorialDraft.value = started
+            }
+        }
+    }
+
+    fun resumeNewBikeTutorial() {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                tutorialEditVersion.incrementAndGet()
+                _tutorialStatusMessage.value = null
+                val existing = _tutorialDraft.value ?: tutorialDraftStore.loadDraft()
+                if (existing != null) {
+                    val reopened = tutorialCoordinator.updateDraft(existing.copy(isOpen = true))
+                    _tutorialDraft.value = reopened
+                } else {
+                    _tutorialDraft.value = tutorialCoordinator.startOrResume()
+                }
+            }
+        }
+    }
+
+    fun minimizeNewBikeTutorial() {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: return@withLock
+                tutorialEditVersion.incrementAndGet()
+                if (!current.hasAnyUserInput() && current.persistedBikeId.isNullOrBlank()) {
+                    tutorialDraftStore.clearDraft()
+                    _tutorialDraft.value = null
+                } else {
+                    val minimized = tutorialCoordinator.updateDraft(current.copy(isOpen = false))
+                    _tutorialDraft.value = minimized
+                }
+            }
+        }
+    }
+
+    fun updateTutorialDraft(updated: NewBikeTutorialDraft) {
+        val version = tutorialEditVersion.incrementAndGet()
+        _tutorialDraft.value = updated
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val latest = _tutorialDraft.value ?: updated
+                val saved = tutorialCoordinator.updateDraft(latest)
+                if (tutorialEditVersion.get() == version) {
+                    _tutorialDraft.value = saved
+                } else {
+                    _tutorialDraft.update { current ->
+                        current?.copy(lastAutosavedEpochMs = saved.lastAutosavedEpochMs)
+                    }
+                }
+            }
+        }
+    }
+
+    fun applyTutorialLlmJson(rawJson: String) {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: return@withLock
+                val result = tutorialCoordinator.applyLlmJsonToDraft(current, rawJson)
+                if (result.isSuccess) {
+                    val updated = result.getOrThrow()
+                    tutorialEditVersion.incrementAndGet()
+                    val persisted = tutorialCoordinator.updateDraft(updated)
+                    _tutorialDraft.value = persisted
+                    val lang = _appLanguage.value
+                    _tutorialStatusMessage.value = lang.pick(
+                        "Parsed JSON: ${persisted.maintenanceTasks.size} maintenance tasks applied.",
+                        "JSON spracovaný: použitých ${persisted.maintenanceTasks.size} úloh údržby."
+                    )
+                } else {
+                    val err = result.exceptionOrNull()?.message ?: "Invalid JSON"
+                    val lang = _appLanguage.value
+                    _tutorialStatusMessage.value = lang.pick(
+                        "JSON parse failed: $err",
+                        "Spracovanie JSON zlyhalo: $err"
+                    )
+                }
+            }
+        }
+    }
+
+    fun saveTutorialBikeOnly() {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: return@withLock
+                tutorialEditVersion.incrementAndGet()
+                tutorialCoordinator.saveBikeOnly(current)
+                _tutorialStatusMessage.value = null
+                _tutorialDraft.value = null
+            }
+        }
+    }
+
+    fun proceedToMaintenanceReview() {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: return@withLock
+                tutorialEditVersion.incrementAndGet()
+                _tutorialStatusMessage.value = null
+                val updated = tutorialCoordinator.saveBikeAndOpenMaintenanceReview(current)
+                _tutorialDraft.value = updated
+            }
+        }
+    }
+
+    fun updateTutorialMaintenanceReviewItem(updatedItem: MaintenanceHistoryReviewItem) {
+        val current = _tutorialDraft.value ?: return
+        val modified = updatedItem.copy(isUserModified = true)
+        val optimisticItems = if (current.maintenanceReviewItems.any { it.taskId == modified.taskId }) {
+            current.maintenanceReviewItems.map { if (it.taskId == modified.taskId) modified else it }
+        } else {
+            current.maintenanceReviewItems + modified
+        }
+        val version = tutorialEditVersion.incrementAndGet()
+        _tutorialDraft.value = current.copy(maintenanceReviewItems = optimisticItems)
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val latestDraft = _tutorialDraft.value ?: current
+                val latestItem = latestDraft.maintenanceReviewItems.firstOrNull { it.taskId == modified.taskId } ?: modified
+                val saved = tutorialCoordinator.updateMaintenanceReviewItem(latestDraft, latestItem)
+                if (tutorialEditVersion.get() == version) {
+                    _tutorialDraft.value = saved
+                } else {
+                    _tutorialDraft.update { draft ->
+                        draft?.copy(lastAutosavedEpochMs = saved.lastAutosavedEpochMs)
+                    }
+                }
+            }
+        }
+    }
+
+    fun addTutorialMaintenanceTask(
+        task: MaintenanceTaskDto,
+        lastPerformedKmText: String = "",
+        lastPerformedDateIso: String = "",
+        wasNeverDone: Boolean = false
+    ) {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: return@withLock
+                tutorialEditVersion.incrementAndGet()
+                val saved = tutorialCoordinator.addMaintenanceReviewTask(
+                    draft = current,
+                    task = task,
+                    lastPerformedKmText = lastPerformedKmText,
+                    lastPerformedDateIso = lastPerformedDateIso,
+                    wasNeverDone = wasNeverDone
+                )
+                _tutorialDraft.value = saved
+            }
+        }
+    }
+
+    fun resetTutorialMaintenanceItemToExpected(taskId: String) {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: return@withLock
+                val existingItem = current.maintenanceReviewItems.firstOrNull { it.taskId == taskId } ?: return@withLock
+                val sourceTask = current.maintenanceTasks.firstOrNull { it.taskId == taskId }
+                    ?: MaintenanceTaskDto(
+                        taskId = existingItem.taskId,
+                        category = existingItem.category,
+                        taskName = existingItem.taskName,
+                        actionType = existingItem.actionType,
+                        firstBreakInAtKm = existingItem.firstBreakInAtKm,
+                        intervalKm = existingItem.intervalKm,
+                        intervalMonths = existingItem.intervalMonths,
+                        warningThresholdKm = existingItem.warningThresholdKm,
+                        warningThresholdDays = existingItem.warningThresholdDays,
+                        oemPartNumbers = existingItem.oemPartNumbers,
+                        notes = existingItem.notes
+                    )
+                val today = LocalDate.now()
+                val currentOdo = current.currentOdometerKmText.trim().replace(',', '.').toDoubleOrNull()
+                    ?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+                val condition = current.purchaseCondition ?: if (currentOdo > 0.0) {
+                    BikePurchaseCondition.USED
+                } else {
+                    BikePurchaseCondition.NEW
+                }
+                val bikeYear = current.yearText.trim().toIntOrNull()?.takeIf { it > 0 }
+                val purchaseDate = current.purchaseDateIso.trim().ifBlank { today.toString() }
+                val expectedItem = ServiceBookBaselineCalculator.buildExpectedHistory(
+                    condition = condition,
+                    currentOdometerKm = currentOdo,
+                    bikeYear = bikeYear,
+                    purchaseDateIso = purchaseDate,
+                    tasks = listOf(sourceTask),
+                    today = today
+                ).first()
+
+                val bikeId = current.persistedBikeId?.takeIf { it.isNotBlank() }
+                if (bikeId != null) {
+                    val log = ServiceBookBaselineCalculator.buildBaselineServiceLog(
+                        motorcycleId = bikeId,
+                        item = expectedItem,
+                        condition = condition,
+                        defaultDateIso = purchaseDate
+                    )
+                    if (log != null) {
+                        repository.insertServiceLog(log)
+                    } else {
+                        repository.deleteServiceLog(ServiceBookBaselineCalculator.baselineLogId(bikeId, expectedItem.taskId))
+                    }
+                }
+
+                tutorialEditVersion.incrementAndGet()
+                val updatedItems = current.maintenanceReviewItems.map {
+                    if (it.taskId == taskId) expectedItem else it
+                }
+                val saved = tutorialDraftStore.saveDraft(current.copy(maintenanceReviewItems = updatedItems))
+                _tutorialDraft.value = saved
+            }
+        }
+    }
+
+    fun saveTutorialAndFinish() {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: return@withLock
+                tutorialEditVersion.incrementAndGet()
+                tutorialCoordinator.saveFinal(current)
+                _tutorialStatusMessage.value = null
+                _tutorialDraft.value = null
+            }
+        }
+    }
+
+    fun discardTutorial(deletePersistedBike: Boolean) {
+        viewModelScope.launch {
+            tutorialMutex.withLock {
+                val current = _tutorialDraft.value ?: tutorialDraftStore.loadDraft()
+                tutorialEditVersion.incrementAndGet()
+                if (current != null) {
+                    tutorialCoordinator.discardDraft(current, deletePersistedBike = deletePersistedBike)
+                } else {
+                    tutorialDraftStore.clearDraft()
+                }
+                _tutorialStatusMessage.value = null
+                _tutorialDraft.value = null
+            }
+        }
     }
 
     // --- Active Bike Reactive Streams ---
@@ -532,21 +839,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             val id = UUID.randomUUID().toString()
+            val cleanMake = make.trim()
+            val cleanModel = model.trim()
             val newBike = MotorcycleEntity(
                 id = id,
-                name = name.ifBlank { "$make $model".trim() },
-                make = make.ifBlank { "Yamaha" },
-                model = model.ifBlank { "MT-09" },
-                year = if (year > 1900) year else 2024,
-                engineDisplacementCc = if (displacementCc > 0) displacementCc else 890,
-                baseOdometerKm = startOdoKm,
+                name = name.trim().ifBlank { "$cleanMake $cleanModel".trim() },
+                make = cleanMake,
+                model = cleanModel,
+                year = if (year > 0) year else 0,
+                engineDisplacementCc = if (displacementCc > 0) displacementCc else 0,
+                baseOdometerKm = startOdoKm.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
                 accumulatedTrackedKm = 0.0,
                 manualAdjustmentOffsetKm = 0.0,
                 technicalSpecsJson = "{}",
-                buyingPrice = price,
-                type = type.ifBlank { "Naked" },
+                buyingPrice = price.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
+                type = type.trim(),
                 startDateIso = LocalDate.now().format(DateTimeFormatter.ISO_DATE),
-                currencySymbol = currencySymbol,
+                currencySymbol = currencySymbol.ifBlank { "€" },
                 isActive = true
             )
             repository.clearActiveMotorcycles()

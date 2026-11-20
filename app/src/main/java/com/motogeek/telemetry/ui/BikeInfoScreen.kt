@@ -33,7 +33,6 @@ import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
 import com.motogeek.telemetry.domain.maintenance.RestoreMode
 import com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto
 import com.motogeek.telemetry.domain.toSafeDouble
-import com.motogeek.telemetry.domain.toSafeInt
 import com.motogeek.telemetry.ui.components.ActiveBikeDropdownCard
 import com.motogeek.telemetry.ui.components.GuidedImportDialog
 import com.motogeek.telemetry.ui.components.SegmentedDigitalText
@@ -72,21 +71,34 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
     }
 
     var name by remember(activeBike) { mutableStateOf(activeBike?.name ?: "") }
-    var type by remember(activeBike) { mutableStateOf(activeBike?.type ?: "Naked") }
+    var type by remember(activeBike) { mutableStateOf(activeBike?.type ?: "") }
     var make by remember(activeBike) { mutableStateOf(activeBike?.make ?: "") }
     var model by remember(activeBike) { mutableStateOf(activeBike?.model ?: "") }
-    var yearText by remember(activeBike) { mutableStateOf(activeBike?.year?.toString() ?: "2024") }
-    var ccText by remember(activeBike) { mutableStateOf(activeBike?.engineDisplacementCc?.toString() ?: "890") }
+    var yearText by remember(activeBike) { mutableStateOf(activeBike?.year?.takeIf { it > 0 }?.toString() ?: "") }
+    var ccText by remember(activeBike) { mutableStateOf(activeBike?.engineDisplacementCc?.takeIf { it > 0 }?.toString() ?: "") }
     var startDateIso by remember(activeBike) { mutableStateOf(activeBike?.startDateIso ?: "") }
-    var baseOdoText by remember(activeBike) { mutableStateOf(activeBike?.baseOdometerKm?.toInt()?.toString() ?: "0") }
-    var buyingPriceText by remember(activeBike) { mutableStateOf(activeBike?.buyingPrice?.toString() ?: "0") }
-    var currencySymbol by remember(activeBike) { mutableStateOf(activeBike?.currencySymbol ?: "€") }
+    var baseOdoText by remember(activeBike) {
+        mutableStateOf(
+            activeBike?.baseOdometerKm?.let { odo ->
+                if (odo == odo.toLong().toDouble()) odo.toLong().toString() else odo.toString()
+            } ?: ""
+        )
+    }
+    var buyingPriceText by remember(activeBike) {
+        mutableStateOf(
+            activeBike?.buyingPrice?.takeIf { it > 0.0 }?.let { price ->
+                if (price == price.toLong().toDouble()) price.toLong().toString() else price.toString()
+            } ?: ""
+        )
+    }
+    var currencySymbol by remember(activeBike) { mutableStateOf(activeBike?.currencySymbol?.ifBlank { "€" } ?: "€") }
+
+    val hasUnfinishedDraft by viewModel.hasUnfinishedTutorialDraft.collectAsState()
 
     var showPasteDialog by remember { mutableStateOf(false) }
     var pasteJsonText by remember { mutableStateOf("") }
     var pendingTemplate by remember { mutableStateOf<Pair<String, MotorcycleBackupDto>?>(null) }
 
-    var showNewBikeDialog by remember { mutableStateOf(false) }
     var showAddTorqueDialog by remember { mutableStateOf(false) }
     var showEditSpecsDialog by remember { mutableStateOf(false) }
     var showDeleteBikeConfirm by remember { mutableStateOf(false) }
@@ -132,7 +144,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showNewBikeDialog = true }) {
+                    TextButton(onClick = { viewModel.startNewBikeTutorial() }) {
                         Text("+ NEW BIKE", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                     Button(
@@ -140,16 +152,16 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                             activeBike?.let { bike ->
                                 scope.launch {
                                     val updated = bike.copy(
-                                        name = name.ifBlank { "$make $model".trim() },
-                                        type = type,
-                                        make = make,
-                                        model = model,
-                                        year = yearText.toSafeInt(2024),
-                                        engineDisplacementCc = ccText.toSafeInt(890),
-                                        startDateIso = startDateIso,
+                                        name = name.trim().ifBlank { "$make $model".trim() },
+                                        type = type.trim(),
+                                        make = make.trim(),
+                                        model = model.trim(),
+                                        year = yearText.trim().toIntOrNull()?.takeIf { it > 0 } ?: 0,
+                                        engineDisplacementCc = ccText.trim().toIntOrNull()?.takeIf { it > 0 } ?: 0,
+                                        startDateIso = startDateIso.trim(),
                                         baseOdometerKm = baseOdoText.toSafeDouble(0.0),
                                         buyingPrice = buyingPriceText.toSafeDouble(0.0),
-                                        currencySymbol = currencySymbol
+                                        currencySymbol = currencySymbol.trim().ifBlank { "€" }
                                     )
                                     viewModel.repository.updateMotorcycle(updated)
                                     viewModel.repository.logActivity(
@@ -189,10 +201,57 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                 activeBike = activeBike,
                 allBikes = allBikes,
                 onBikeSelected = { id -> viewModel.selectActiveMotorcycle(id) },
-                onAddNewBike = { showNewBikeDialog = true },
+                onAddNewBike = { viewModel.startNewBikeTutorial() },
                 onSyncOdometer = { newKm -> viewModel.updateActiveBikeOdometer(newKm) },
                 showOdometer = true
             )
+
+            if (hasUnfinishedDraft) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = TftSurfaceElevated),
+                    border = BorderStroke(1.dp, RacingAmberPrimary)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = tr("Resume unfinished bike setup", "Dokončiť rozpracované nastavenie"),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = tr("Your draft is autosaved.", "Váš návrh je automaticky uložený."),
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(
+                                onClick = { viewModel.discardTutorial(deletePersistedBike = true) },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(tr("Discard", "Zahodiť"), color = RedlineCrimson, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = { viewModel.resumeNewBikeTutorial() },
+                                colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(tr("Resume", "Pokračovať"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
 
             // Current Odometer & Calibration Banner
             Card(
@@ -408,20 +467,22 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         }
                     }
 
-                    val frontPsi = specs.frontTirePressurePsi ?: 36.0
-                    val rearPsi = specs.rearTirePressurePsi ?: 42.0
-                    val frontPressureStr = if (useBarUnits) String.format("%.2f BAR", frontPsi / 14.5038) else "${frontPsi.toInt()} PSI"
-                    val rearPressureStr = if (useBarUnits) String.format("%.2f BAR", rearPsi / 14.5038) else "${rearPsi.toInt()} PSI"
+                    val frontPressureStr = specs.frontTirePressurePsi?.let { frontPsi ->
+                        if (useBarUnits) String.format("%.2f BAR", frontPsi / 14.5038) else "${frontPsi.toInt()} PSI"
+                    } ?: "—"
+                    val rearPressureStr = specs.rearTirePressurePsi?.let { rearPsi ->
+                        if (useBarUnits) String.format("%.2f BAR", rearPsi / 14.5038) else "${rearPsi.toInt()} PSI"
+                    } ?: "—"
 
                     // Key Fluid & Tire Pressure Chips
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        SpecPill("Oil Cap", "${specs.oilCapacityLiters ?: 3.2} L", TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill("Oil Cap", specs.oilCapacityLiters?.let { "$it L" } ?: "—", TelemetryIceCyan, Modifier.weight(1f))
                         SpecPill("Front Tire", frontPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
                         SpecPill("Rear Tire", rearPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
-                        SpecPill("Chain Slack", specs.chainSlackMm ?: "25-35 mm", WarningGold, Modifier.weight(1f))
+                        SpecPill("Chain Slack", specs.chainSlackMm?.trim()?.ifBlank { null } ?: "—", WarningGold, Modifier.weight(1f))
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -430,10 +491,10 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        SpecPill("Oil Grade", specs.oilViscosityAndSpec.ifBlank { "10W-40" }.take(10), TelemetryIceCyan, Modifier.weight(1f))
-                        SpecPill("Coolant", "${specs.coolantCapacityLiters ?: 1.8} L", TelemetryIceCyan, Modifier.weight(1f))
-                        SpecPill("Brake Fluid", specs.brakeFluidType.ifBlank { "DOT 4" }, WarningGold, Modifier.weight(1f))
-                        SpecPill("Spark Plug", specs.sparkPlugModel.ifBlank { "OEM" }.take(10), RacingAmberPrimary, Modifier.weight(1f))
+                        SpecPill("Oil Grade", specs.oilViscosityAndSpec.trim().ifBlank { "—" }.take(10), TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill("Coolant", specs.coolantCapacityLiters?.let { "$it L" } ?: "—", TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill("Brake Fluid", specs.brakeFluidType.trim().ifBlank { "—" }, WarningGold, Modifier.weight(1f))
+                        SpecPill("Spark Plug", specs.sparkPlugModel.trim().ifBlank { "—" }.take(10), RacingAmberPrimary, Modifier.weight(1f))
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -881,17 +942,6 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
         )
     }
 
-    if (showNewBikeDialog) {
-        AddNewBikeDialog(
-            onDismiss = { showNewBikeDialog = false },
-            onSave = { name, make, model, year, cc, odo, price, type ->
-                viewModel.addNewMotorcycle(name, make, model, year, cc, odo, price, type)
-                showNewBikeDialog = false
-                scope.launch { snackbarHostState.showSnackbar("Added $make $model to garage!") }
-            }
-        )
-    }
-
     if (showAddTorqueDialog && activeBike != null) {
         QuickAddTorqueDialog(
             onDismiss = { showAddTorqueDialog = false },
@@ -936,16 +986,21 @@ private fun EditTechnicalSpecsDialog(
     onDismiss: () -> Unit,
     onSave: (TechnicalSpecsDto) -> Unit
 ) {
-    var oilCap by remember { mutableStateOf(initialSpecs.oilCapacityLiters?.toString() ?: "3.2") }
-    var oilVisc by remember { mutableStateOf(initialSpecs.oilViscosityAndSpec.ifBlank { "10W-40" }) }
-    var coolantCap by remember { mutableStateOf(initialSpecs.coolantCapacityLiters?.toString() ?: "1.8") }
-    var brakeFluid by remember { mutableStateOf(initialSpecs.brakeFluidType.ifBlank { "DOT 4" }) }
-    var frontPsi by remember { mutableStateOf(initialSpecs.frontTirePressurePsi?.toString() ?: "36.0") }
-    var rearPsi by remember { mutableStateOf(initialSpecs.rearTirePressurePsi?.toString() ?: "42.0") }
-    var chainSlack by remember { mutableStateOf(initialSpecs.chainSlackMm ?: "25-35") }
+    var oilCap by remember { mutableStateOf(initialSpecs.oilCapacityLiters?.toString() ?: "") }
+    var oilVisc by remember { mutableStateOf(initialSpecs.oilViscosityAndSpec) }
+    var coolantCap by remember { mutableStateOf(initialSpecs.coolantCapacityLiters?.toString() ?: "") }
+    var brakeFluid by remember { mutableStateOf(initialSpecs.brakeFluidType) }
+    var frontPsi by remember { mutableStateOf(initialSpecs.frontTirePressurePsi?.toString() ?: "") }
+    var rearPsi by remember { mutableStateOf(initialSpecs.rearTirePressurePsi?.toString() ?: "") }
+    var chainSlack by remember { mutableStateOf(initialSpecs.chainSlackMm ?: "") }
     var sparkPlug by remember { mutableStateOf(initialSpecs.sparkPlugModel) }
     var valveIntake by remember { mutableStateOf(initialSpecs.valveClearanceIntakeMm) }
     var valveExhaust by remember { mutableStateOf(initialSpecs.valveClearanceExhaustMm) }
+
+    fun parseOptionalPositiveDouble(raw: String): Double? {
+        val parsed = raw.trim().replace(',', '.').toDoubleOrNull() ?: return null
+        return parsed.takeIf { it.isFinite() && it > 0.0 }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1093,13 +1148,13 @@ private fun EditTechnicalSpecsDialog(
                 onClick = {
                     onSave(
                         initialSpecs.copy(
-                            oilCapacityLiters = oilCap.toSafeDouble(3.2),
+                            oilCapacityLiters = parseOptionalPositiveDouble(oilCap),
                             oilViscosityAndSpec = oilVisc.trim(),
-                            coolantCapacityLiters = coolantCap.toSafeDouble(1.8),
+                            coolantCapacityLiters = parseOptionalPositiveDouble(coolantCap),
                             brakeFluidType = brakeFluid.trim(),
-                            frontTirePressurePsi = frontPsi.toSafeDouble(36.0),
-                            rearTirePressurePsi = rearPsi.toSafeDouble(42.0),
-                            chainSlackMm = chainSlack.trim(),
+                            frontTirePressurePsi = parseOptionalPositiveDouble(frontPsi),
+                            rearTirePressurePsi = parseOptionalPositiveDouble(rearPsi),
+                            chainSlackMm = chainSlack.trim().ifBlank { null },
                             sparkPlugModel = sparkPlug.trim(),
                             valveClearanceIntakeMm = valveIntake.trim(),
                             valveClearanceExhaustMm = valveExhaust.trim()
@@ -1169,158 +1224,6 @@ private fun QuickAddTorqueDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
                 Text("Add Torque", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
-        }
-    )
-}
-
-@Composable
-private fun AddNewBikeDialog(
-    onDismiss: () -> Unit,
-    onSave: (name: String, make: String, model: String, year: Int, cc: Int, odo: Double, price: Double, type: String) -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    var make by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf("") }
-    var yearText by remember { mutableStateOf("2024") }
-    var ccText by remember { mutableStateOf("890") }
-    var odoText by remember { mutableStateOf("0") }
-    var priceText by remember { mutableStateOf("0") }
-    var type by remember { mutableStateOf("Naked") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = TftSurfaceDark,
-        title = { Text("Add New Motorcycle", color = Color.White, fontWeight = FontWeight.Bold) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Bike Name (Optional)") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RacingAmberPrimary,
-                        unfocusedBorderColor = TitaniumBorder,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = make,
-                        onValueChange = { make = it },
-                        label = { Text("Make (e.g. Honda)") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = model,
-                        onValueChange = { model = it },
-                        label = { Text("Model (e.g. CBR650R)") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = yearText,
-                        onValueChange = { yearText = it },
-                        label = { Text("Year") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = ccText,
-                        onValueChange = { ccText = it },
-                        label = { Text("CC") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = type,
-                        onValueChange = { type = it },
-                        label = { Text("Category") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = odoText,
-                        onValueChange = { odoText = it },
-                        label = { Text("Odo (km)") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = priceText,
-                        onValueChange = { priceText = it },
-                        label = { Text("Price (€)") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = RacingAmberPrimary,
-                            unfocusedBorderColor = TitaniumBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSave(
-                        name,
-                        make.ifBlank { "Yamaha" },
-                        model.ifBlank { "MT-09" },
-                        yearText.toSafeInt(2024),
-                        ccText.toSafeInt(890),
-                        odoText.toSafeDouble(0.0),
-                        priceText.toSafeDouble(0.0),
-                        type.ifBlank { "Naked" }
-                    )
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
-            ) {
-                Text("Add Motorcycle", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
