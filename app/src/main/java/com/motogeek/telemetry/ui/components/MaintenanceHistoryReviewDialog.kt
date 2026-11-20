@@ -1,5 +1,6 @@
 package com.motogeek.telemetry.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -21,8 +22,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.motogeek.telemetry.data.local.MaintenanceTaskEntity
 import com.motogeek.telemetry.domain.maintenance.MaintenanceEvaluator
 import com.motogeek.telemetry.domain.maintenance.MaintenanceTaskDto
@@ -109,301 +108,303 @@ fun MaintenanceHistoryReviewDialog(
     }
     val bikePillText = "$bikeTitleParts • $conditionLabel • ${currentOdo.toInt()} km"
 
-    Dialog(
-        onDismissRequest = onMinimize,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = false
-        )
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = CarbonObsidianBg
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header
-                Surface(
-                    color = TftSurfaceDark,
-                    border = BorderStroke(1.dp, TitaniumBorder)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = tr("MAINTENANCE HISTORY", "HISTÓRIA ÚDRŽBY"),
-                                    color = TelemetryIceCyan,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    letterSpacing = 1.sp
-                                )
-                                Text(
-                                    text = tr("Service Book History Review", "Kontrola servisnej knižky"),
-                                    color = Color.White,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
+    BackHandler(onBack = onMinimize)
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                val autosaved = draft.lastAutosavedEpochMs > 0L
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = (if (autosaved) ApexEmeraldGreen else Color.Gray).copy(alpha = 0.14f),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        (if (autosaved) ApexEmeraldGreen else Color.Gray).copy(alpha = 0.5f)
-                                    )
-                                ) {
-                                    Text(
-                                        text = if (autosaved) {
-                                            tr("✓ Autosaved", "✓ Uložené")
-                                        } else {
-                                            tr("Draft", "Návrh")
-                                        },
-                                        color = if (autosaved) ApexEmeraldGreen else Color.LightGray,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-
-                                IconButton(onClick = onMinimize) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = tr("Minimize review", "Minimalizovať kontrolu"),
-                                        tint = Color.LightGray
-                                    )
-                                }
-                            }
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = TftSurfaceElevated,
-                            border = BorderStroke(1.dp, TitaniumBorder)
-                        ) {
-                            Text(
-                                text = bikePillText,
-                                color = RacingAmberPrimary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Scrollable Content
-                LazyColumn(
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = CarbonObsidianBg,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            Surface(
+                color = TftSurfaceDark,
+                border = BorderStroke(1.dp, TitaniumBorder)
+            ) {
+                Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    item(key = "explanation_banner") {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = TelemetryIceCyan.copy(alpha = 0.10f),
-                            border = BorderStroke(1.dp, TelemetryIceCyan.copy(alpha = 0.45f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MenuBook,
-                                    contentDescription = null,
-                                    tint = TelemetryIceCyan,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(
-                                        text = tr(
-                                            "Service Book Baseline Assumption",
-                                            "Predpoklad podľa servisnej knižky"
-                                        ),
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = tr(
-                                            "We assumed all important scheduled maintenance was completed on time according to the service book up to ${currentOdo.toInt()} km. Review each item below and update any mileage, date, or mark tasks as not done yet.",
-                                            "Predpokladali sme, že všetka dôležitá predpísaná údržba bola vykonaná včas podľa servisnej knižky do stavu ${currentOdo.toInt()} km. Skontrolujte jednotlivé úkony a upravte km, dátum alebo označte úkony, ktoré ešte neboli vykonané."
-                                        ),
-                                        color = Color.LightGray,
-                                        fontSize = 12.sp,
-                                        lineHeight = 16.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (draft.maintenanceReviewItems.isEmpty()) {
-                        item(key = "empty_schedule_notice") {
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = TftSurfaceDark,
-                                border = BorderStroke(1.dp, TitaniumBorder),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = tr(
-                                            "No scheduled maintenance tasks yet",
-                                            "Zatiaľ žiadne plánované úkony údržby"
-                                        ),
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                    Text(
-                                        text = tr(
-                                            "Add key service tasks below (for example Engine Oil & Filter, Chain, or Brake Fluid) to track your service history.",
-                                            "Pridajte nižšie kľúčové servisné úkony (napr. Motorový olej a filter, Reťaz alebo Brzdová kvapalina) pre sledovanie servisnej histórie."
-                                        ),
-                                        color = Color.Gray,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    items(draft.maintenanceReviewItems, key = { it.taskId }) { item ->
-                        val taskEntity = remember(item, previewBike.id) { item.toTaskEntity(previewBike.id) }
-                        val baselineLog = remember(item, previewBike.id, condition, todayIso) {
-                            ServiceBookBaselineCalculator.buildBaselineServiceLog(
-                                motorcycleId = previewBike.id,
-                                item = item,
-                                condition = condition,
-                                defaultDateIso = draft.purchaseDateIso.trim().ifBlank { todayIso }
+                        .fillMaxWidth()
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(
+                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal
                             )
-                        }
-                        val evaluatedStatus = remember(previewBike, taskEntity, baselineLog, today) {
-                            evaluator.evaluate(
-                                motorcycle = previewBike,
-                                tasks = listOf(taskEntity),
-                                logs = listOfNotNull(baselineLog),
-                                currentDate = today
-                            ).firstOrNull()
-                        }
-
-                        ReviewItemCard(
-                            item = item,
-                            expectedHintItem = expectedByTaskId[item.taskId],
-                            evaluatedStatus = evaluatedStatus,
-                            onUpdateItem = onUpdateItem,
-                            onResetItem = { onResetItem(item.taskId) }
                         )
-                    }
-
-                    item(key = "quick_add_section") {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { showInlineAddTask = !showInlineAddTask },
-                                border = BorderStroke(1.dp, RacingAmberPrimary),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(
-                                    imageVector = if (showInlineAddTask) Icons.Default.ExpandLess else Icons.Default.Add,
-                                    contentDescription = null,
-                                    tint = RacingAmberPrimary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = tr("+ Add Maintenance Task", "+ Pridať servisný úkon"),
-                                    color = RacingAmberPrimary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            AnimatedVisibility(visible = showInlineAddTask) {
-                                InlineAddReviewTaskCard(
-                                    appLangCode = appLang.code,
-                                    onAdd = { task, kmText, dateIso, neverDone ->
-                                        onAddTask(task, kmText, dateIso, neverDone)
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    item(key = "bottom_spacer") {
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-                }
-
-                // Bottom Bar: ALWAYS keeps explicit Discard and Save
-                Surface(
-                    color = TftSurfaceDark,
-                    border = BorderStroke(1.dp, TitaniumBorder)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        OutlinedButton(
-                            onClick = { showDiscardChoiceDialog = true },
-                            border = BorderStroke(1.dp, RedlineCrimson.copy(alpha = 0.8f)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = tr("Discard", "Zahodiť"),
-                                color = RedlineCrimson,
-                                fontWeight = FontWeight.Bold
+                                text = tr("MAINTENANCE HISTORY", "HISTÓRIA ÚDRŽBY"),
+                                color = TelemetryIceCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 1.sp
                             )
-                        }
-
-                        Button(
-                            onClick = onSave,
-                            colors = ButtonDefaults.buttonColors(containerColor = ApexEmeraldGreen),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1.5f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = Color.Black,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = tr("Save", "Uložiť"),
-                                color = Color.Black,
+                                text = tr("Service Book History Review", "Kontrola servisnej knižky"),
+                                color = Color.White,
+                                fontSize = 17.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val autosaved = draft.lastAutosavedEpochMs > 0L
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = (if (autosaved) ApexEmeraldGreen else Color.Gray).copy(alpha = 0.14f),
+                                border = BorderStroke(
+                                    1.dp,
+                                    (if (autosaved) ApexEmeraldGreen else Color.Gray).copy(alpha = 0.5f)
+                                )
+                            ) {
+                                Text(
+                                    text = if (autosaved) {
+                                        tr("✓ Autosaved", "✓ Uložené")
+                                    } else {
+                                        tr("Draft", "Návrh")
+                                    },
+                                    color = if (autosaved) ApexEmeraldGreen else Color.LightGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            IconButton(onClick = onMinimize) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = tr("Minimize review", "Minimalizovať kontrolu"),
+                                    tint = Color.LightGray
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = TftSurfaceElevated,
+                        border = BorderStroke(1.dp, TitaniumBorder)
+                    ) {
+                        Text(
+                            text = bikePillText,
+                            color = RacingAmberPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
                     }
                 }
+            }
+        },
+        bottomBar = {
+            // Bottom Bar: ALWAYS keeps explicit Discard and Save
+            Surface(
+                color = TftSurfaceDark,
+                border = BorderStroke(1.dp, TitaniumBorder)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(
+                            WindowInsets.navigationBars
+                                .union(WindowInsets.ime)
+                                .union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                        )
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { showDiscardChoiceDialog = true },
+                        border = BorderStroke(1.dp, RedlineCrimson.copy(alpha = 0.8f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = tr("Discard", "Zahodiť"),
+                            color = RedlineCrimson,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Button(
+                        onClick = onSave,
+                        colors = ButtonDefaults.buttonColors(containerColor = ApexEmeraldGreen),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1.5f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = tr("Save", "Uložiť"),
+                            color = Color.Black,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item(key = "explanation_banner") {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = TelemetryIceCyan.copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, TelemetryIceCyan.copy(alpha = 0.45f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = TelemetryIceCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = tr(
+                                    "Service Book Baseline Assumption",
+                                    "Predpoklad podľa servisnej knižky"
+                                ),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = tr(
+                                    "We assumed all important scheduled maintenance was completed on time according to the service book up to ${currentOdo.toInt()} km. Review each item below and update any mileage, date, or mark tasks as not done yet.",
+                                    "Predpokladali sme, že všetka dôležitá predpísaná údržba bola vykonaná včas podľa servisnej knižky do stavu ${currentOdo.toInt()} km. Skontrolujte jednotlivé úkony a upravte km, dátum alebo označte úkony, ktoré ešte neboli vykonané."
+                                ),
+                                color = Color.LightGray,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (draft.maintenanceReviewItems.isEmpty()) {
+                item(key = "empty_schedule_notice") {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = TftSurfaceDark,
+                        border = BorderStroke(1.dp, TitaniumBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = tr(
+                                    "No scheduled maintenance tasks yet",
+                                    "Zatiaľ žiadne plánované úkony údržby"
+                                ),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = tr(
+                                    "Add key service tasks below (for example Engine Oil & Filter, Chain, or Brake Fluid) to track your service history.",
+                                    "Pridajte nižšie kľúčové servisné úkony (napr. Motorový olej a filter, Reťaz alebo Brzdová kvapalina) pre sledovanie servisnej histórie."
+                                ),
+                                color = Color.Gray,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            items(draft.maintenanceReviewItems, key = { it.taskId }) { item ->
+                val taskEntity = remember(item, previewBike.id) { item.toTaskEntity(previewBike.id) }
+                val baselineLog = remember(item, previewBike.id, condition, todayIso) {
+                    ServiceBookBaselineCalculator.buildBaselineServiceLog(
+                        motorcycleId = previewBike.id,
+                        item = item,
+                        condition = condition,
+                        defaultDateIso = draft.purchaseDateIso.trim().ifBlank { todayIso }
+                    )
+                }
+                val evaluatedStatus = remember(previewBike, taskEntity, baselineLog, today) {
+                    evaluator.evaluate(
+                        motorcycle = previewBike,
+                        tasks = listOf(taskEntity),
+                        logs = listOfNotNull(baselineLog),
+                        currentDate = today
+                    ).firstOrNull()
+                }
+
+                ReviewItemCard(
+                    item = item,
+                    expectedHintItem = expectedByTaskId[item.taskId],
+                    evaluatedStatus = evaluatedStatus,
+                    onUpdateItem = onUpdateItem,
+                    onResetItem = { onResetItem(item.taskId) }
+                )
+            }
+
+            item(key = "quick_add_section") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { showInlineAddTask = !showInlineAddTask },
+                        border = BorderStroke(1.dp, RacingAmberPrimary),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = if (showInlineAddTask) Icons.Default.ExpandLess else Icons.Default.Add,
+                            contentDescription = null,
+                            tint = RacingAmberPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = tr("+ Add Maintenance Task", "+ Pridať servisný úkon"),
+                            color = RacingAmberPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    AnimatedVisibility(visible = showInlineAddTask) {
+                        InlineAddReviewTaskCard(
+                            appLangCode = appLang.code,
+                            onAdd = { task, kmText, dateIso, neverDone ->
+                                onAddTask(task, kmText, dateIso, neverDone)
+                            }
+                        )
+                    }
+                }
+            }
+
+            item(key = "bottom_spacer") {
+                Spacer(modifier = Modifier.height(12.dp))
             }
         }
     }

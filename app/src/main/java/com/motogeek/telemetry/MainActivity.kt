@@ -9,7 +9,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
@@ -117,42 +119,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val activeTutorialDraft = tutorialDraft
-                    if (activeTutorialDraft != null && activeTutorialDraft.isOpen) {
-                        when (activeTutorialDraft.stage) {
-                            TutorialStage.BIKE_BASICS,
-                            TutorialStage.SPECS_AND_SCHEDULE -> {
-                                AddMotorcycleTutorialDialog(
-                                    draft = activeTutorialDraft,
-                                    statusMessage = tutorialStatusMessage,
-                                    onDraftChanged = { viewModel.updateTutorialDraft(it) },
-                                    onBuildPrompt = { draft -> viewModel.buildTutorialAiPrompt(draft, appLang.code) },
-                                    onApplyLlmJson = { rawJson -> viewModel.applyTutorialLlmJson(rawJson) },
-                                    onProceedToMaintenanceReview = { viewModel.proceedToMaintenanceReview() },
-                                    onSaveBikeOnly = { viewModel.saveTutorialBikeOnly() },
-                                    onDiscard = { deletePersisted -> viewModel.discardTutorial(deletePersisted) },
-                                    onMinimize = { viewModel.minimizeNewBikeTutorial() }
-                                )
-                            }
-                            TutorialStage.MAINTENANCE_REVIEW -> {
-                                MaintenanceHistoryReviewDialog(
-                                    draft = activeTutorialDraft,
-                                    onUpdateItem = { viewModel.updateTutorialMaintenanceReviewItem(it) },
-                                    onResetItem = { taskId -> viewModel.resetTutorialMaintenanceItemToExpected(taskId) },
-                                    onAddTask = { task, km, date, neverDone ->
-                                        viewModel.addTutorialMaintenanceTask(task, km, date, neverDone)
-                                    },
-                                    onSave = { viewModel.saveTutorialAndFinish() },
-                                    onDiscard = { deletePersisted -> viewModel.discardTutorial(deletePersisted) },
-                                    onMinimize = { viewModel.minimizeNewBikeTutorial() }
-                                )
-                            }
-                        }
-                    }
-
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
 
-                    ModalNavigationDrawer(
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        ModalNavigationDrawer(
                         drawerState = drawerState,
                         drawerContent = {
                             MotoGeekDrawerSheet(
@@ -323,6 +294,39 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+
+                        if (activeTutorialDraft != null && activeTutorialDraft.isOpen) {
+                            when (activeTutorialDraft.stage) {
+                                TutorialStage.BIKE_BASICS,
+                                TutorialStage.SPECS_AND_SCHEDULE -> {
+                                    AddMotorcycleTutorialDialog(
+                                        draft = activeTutorialDraft,
+                                        statusMessage = tutorialStatusMessage,
+                                        onDraftChanged = { viewModel.updateTutorialDraft(it) },
+                                        onBuildPrompt = { draft -> viewModel.buildTutorialAiPrompt(draft, appLang.code) },
+                                        onApplyLlmJson = { rawJson -> viewModel.applyTutorialLlmJson(rawJson) },
+                                        onProceedToMaintenanceReview = { viewModel.proceedToMaintenanceReview() },
+                                        onSaveBikeOnly = { viewModel.saveTutorialBikeOnly() },
+                                        onDiscard = { deletePersisted -> viewModel.discardTutorial(deletePersisted) },
+                                        onMinimize = { viewModel.minimizeNewBikeTutorial() }
+                                    )
+                                }
+                                TutorialStage.MAINTENANCE_REVIEW -> {
+                                    MaintenanceHistoryReviewDialog(
+                                        draft = activeTutorialDraft,
+                                        onUpdateItem = { viewModel.updateTutorialMaintenanceReviewItem(it) },
+                                        onResetItem = { taskId -> viewModel.resetTutorialMaintenanceItemToExpected(taskId) },
+                                        onAddTask = { task, km, date, neverDone ->
+                                            viewModel.addTutorialMaintenanceTask(task, km, date, neverDone)
+                                        },
+                                        onSave = { viewModel.saveTutorialAndFinish() },
+                                        onDiscard = { deletePersisted -> viewModel.discardTutorial(deletePersisted) },
+                                        onMinimize = { viewModel.minimizeNewBikeTutorial() }
+                                    )
+                                }
+                            }
+                        }
+                    }
             }
             }
         }

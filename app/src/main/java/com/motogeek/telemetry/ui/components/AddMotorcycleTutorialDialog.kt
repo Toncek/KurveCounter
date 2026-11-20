@@ -3,6 +3,7 @@ package com.motogeek.telemetry.ui.components
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -27,8 +28,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.motogeek.telemetry.domain.maintenance.MaintenanceTaskDto
 import com.motogeek.telemetry.domain.onboarding.BikePurchaseCondition
 import com.motogeek.telemetry.domain.onboarding.NewBikeTutorialDraft
@@ -86,120 +85,63 @@ fun AddMotorcycleTutorialDialog(
     val isStep1 = draft.stage == TutorialStage.BIKE_BASICS
     val canProceedBasics = draft.make.isNotBlank() || draft.model.isNotBlank()
 
-    Dialog(
-        onDismissRequest = onMinimize,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = false
-        )
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = CarbonObsidianBg
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header
-                TutorialWindowHeader(
-                    stepTitle = if (isStep1) {
-                        tr("Step 1/2: Bike Basics", "Krok 1/2: Základné údaje")
-                    } else {
-                        tr("Step 2/2: Specs & Schedule", "Krok 2/2: Špecifikácie a plán")
-                    },
-                    nextHint = if (isStep1) {
-                        tr("Next: Specs & Schedule -> Maintenance Review", "Ďalej: Špecifikácie -> Kontrola servisu")
-                    } else {
-                        tr("Next: Maintenance Review", "Ďalej: Kontrola servisnej knižky")
-                    },
-                    stepProgress = if (isStep1) 0.5f else 1.0f,
-                    autosaved = draft.lastAutosavedEpochMs > 0L,
-                    onMinimize = onMinimize
-                )
+    BackHandler(onBack = onMinimize)
 
-                // Body
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (isStep1) {
-                        Step1BikeBasicsContent(
-                            draft = draft,
-                            showValidationError = showValidationError,
-                            onDraftChanged = {
-                                if (showValidationError && (it.make.isNotBlank() || it.model.isNotBlank())) {
-                                    showValidationError = false
-                                }
-                                onDraftChanged(it)
-                            }
-                        )
-                    } else {
-                        Step2SpecsAndScheduleContent(
-                            draft = draft,
-                            appLangCode = appLang.code,
-                            statusMessage = statusMessage,
-                            promptCopiedBanner = promptCopiedBanner,
-                            showPromptPreview = showPromptPreview,
-                            showTorquesSection = showTorquesSection,
-                            onTogglePromptPreview = { showPromptPreview = !showPromptPreview },
-                            onToggleTorquesSection = { showTorquesSection = !showTorquesSection },
-                            onCopyPrompt = {
-                                val prompt = onBuildPrompt(draft)
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("AI Mechanic Prompt", prompt))
-                                promptCopiedBanner = true
-                            },
-                            onPasteClipboard = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
-                                if (clipText.isNotBlank()) {
-                                    onDraftChanged(draft.copy(rawLlmJson = clipText))
-                                }
-                            },
-                            onBuildPrompt = onBuildPrompt,
-                            onApplyLlmJson = onApplyLlmJson,
-                            onDraftChanged = onDraftChanged
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = CarbonObsidianBg,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            TutorialWindowHeader(
+                stepTitle = if (isStep1) {
+                    tr("Step 1/2: Bike Basics", "Krok 1/2: Základné údaje")
+                } else {
+                    tr("Step 2/2: Specs & Schedule", "Krok 2/2: Špecifikácie a plán")
+                },
+                nextHint = if (isStep1) {
+                    tr("Next: Specs & Schedule -> Maintenance Review", "Ďalej: Špecifikácie -> Kontrola servisu")
+                } else {
+                    tr("Next: Maintenance Review", "Ďalej: Kontrola servisnej knižky")
+                },
+                stepProgress = if (isStep1) 0.5f else 1.0f,
+                autosaved = draft.lastAutosavedEpochMs > 0L,
+                onMinimize = onMinimize
+            )
+        },
+        bottomBar = {
+            Surface(
+                color = TftSurfaceDark,
+                border = BorderStroke(1.dp, TitaniumBorder)
+            ) {
+                val barModifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(
+                        WindowInsets.navigationBars
+                            .union(WindowInsets.ime)
+                            .union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
 
-                // Bottom Action Bar
-                Surface(
-                    color = TftSurfaceDark,
-                    border = BorderStroke(1.dp, TitaniumBorder)
-                ) {
+                if (isStep1) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = barModifier,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (!isStep1) {
-                            OutlinedButton(
-                                onClick = {
-                                    onDraftChanged(draft.copy(stage = TutorialStage.BIKE_BASICS))
-                                },
-                                border = BorderStroke(1.dp, TitaniumBorder),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                            ) {
-                                Text(tr("Back", "Späť"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
                         TextButton(
                             onClick = { showDiscardConfirm = true },
+                            modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                         ) {
-                            Text(tr("Discard", "Zahodiť"), color = RedlineCrimson, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = tr("Discard", "Zahodiť"),
+                                color = RedlineCrimson,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-
-                        Spacer(modifier = Modifier.weight(1f))
 
                         OutlinedButton(
                             onClick = {
@@ -209,40 +151,36 @@ fun AddMotorcycleTutorialDialog(
                                     onSaveBikeOnly()
                                 }
                             },
+                            modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, ApexEmeraldGreen.copy(alpha = 0.7f)),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                         ) {
-                            Text(tr("Save", "Uložiť"), color = ApexEmeraldGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = tr("Save", "Uložiť"),
+                                color = ApexEmeraldGreen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         Button(
                             onClick = {
-                                if (isStep1) {
-                                    if (!canProceedBasics) {
-                                        showValidationError = true
-                                    } else {
-                                        onDraftChanged(draft.copy(stage = TutorialStage.SPECS_AND_SCHEDULE))
-                                    }
+                                if (!canProceedBasics) {
+                                    showValidationError = true
                                 } else {
-                                    if (!canProceedBasics) {
-                                        showValidationError = true
-                                        onDraftChanged(draft.copy(stage = TutorialStage.BIKE_BASICS))
-                                    } else {
-                                        onProceedToMaintenanceReview()
-                                    }
+                                    onDraftChanged(draft.copy(stage = TutorialStage.SPECS_AND_SCHEDULE))
                                 }
                             },
+                            modifier = Modifier.weight(1.15f),
                             colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                         ) {
                             Text(
-                                text = if (isStep1) {
-                                    tr("Next", "Ďalej")
-                                } else {
-                                    tr("Continue: Review Maintenance ->", "Pokračovať: Kontrola servisu ->")
-                                },
+                                text = tr("Next ->", "Ďalej ->"),
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -251,8 +189,158 @@ fun AddMotorcycleTutorialDialog(
                             )
                         }
                     }
+                } else {
+                    Column(
+                        modifier = barModifier,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    onDraftChanged(draft.copy(stage = TutorialStage.BIKE_BASICS))
+                                },
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(1.dp, TitaniumBorder),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = tr("Back", "Späť"),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    if (!canProceedBasics) {
+                                        showValidationError = true
+                                        onDraftChanged(draft.copy(stage = TutorialStage.BIKE_BASICS))
+                                    } else {
+                                        onProceedToMaintenanceReview()
+                                    }
+                                },
+                                modifier = Modifier.weight(1.7f),
+                                colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = tr("Review Maintenance ->", "Kontrola servisu ->"),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { showDiscardConfirm = true },
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(1.dp, RedlineCrimson.copy(alpha = 0.7f)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = tr("Discard", "Zahodiť"),
+                                    color = RedlineCrimson,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (!canProceedBasics) {
+                                        showValidationError = true
+                                    } else {
+                                        onSaveBikeOnly()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(1.dp, ApexEmeraldGreen.copy(alpha = 0.7f)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = tr("Save", "Uložiť"),
+                                    color = ApexEmeraldGreen,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
                 }
             }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (isStep1) {
+                Step1BikeBasicsContent(
+                    draft = draft,
+                    showValidationError = showValidationError,
+                    onDraftChanged = {
+                        if (showValidationError && (it.make.isNotBlank() || it.model.isNotBlank())) {
+                            showValidationError = false
+                        }
+                        onDraftChanged(it)
+                    }
+                )
+            } else {
+                Step2SpecsAndScheduleContent(
+                    draft = draft,
+                    appLangCode = appLang.code,
+                    statusMessage = statusMessage,
+                    promptCopiedBanner = promptCopiedBanner,
+                    showPromptPreview = showPromptPreview,
+                    showTorquesSection = showTorquesSection,
+                    onTogglePromptPreview = { showPromptPreview = !showPromptPreview },
+                    onToggleTorquesSection = { showTorquesSection = !showTorquesSection },
+                    onCopyPrompt = {
+                        val prompt = onBuildPrompt(draft)
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("AI Mechanic Prompt", prompt))
+                        promptCopiedBanner = true
+                    },
+                    onPasteClipboard = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+                        if (clipText.isNotBlank()) {
+                            onDraftChanged(draft.copy(rawLlmJson = clipText))
+                        }
+                    },
+                    onBuildPrompt = onBuildPrompt,
+                    onApplyLlmJson = onApplyLlmJson,
+                    onDraftChanged = onDraftChanged
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 
@@ -312,6 +400,11 @@ private fun TutorialWindowHeader(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .windowInsetsPadding(
+                    WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    )
+                )
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Row(
