@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,9 +37,13 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val appLang = LocalAppLang.current
 
     var showAddEditDialog by remember { mutableStateOf(false) }
     var editingFuelLog by remember { mutableStateOf<FuelLogEntity?>(null) }
+    var pendingDeleteFuelLog by remember { mutableStateOf<FuelLogEntity?>(null) }
+
+    val currency = activeBike?.currencySymbol?.ifBlank { "€" } ?: "€"
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -46,7 +51,7 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Fuel & Consumption",
+                        text = tr("Fuel & Consumption", "Palivo & spotreba"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -58,7 +63,11 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                             navController.navigate("home")
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = RacingAmberPrimary)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = tr("Back", "Späť"),
+                            tint = RacingAmberPrimary
+                        )
                     }
                 },
                 actions = {
@@ -66,7 +75,7 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                         editingFuelLog = null
                         showAddEditDialog = true
                     }) {
-                        Text("+ ADD FILL-UP", color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
+                        Text(tr("+ ADD FILL-UP", "+ PRIDAŤ TANKOVANIE"), color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -82,7 +91,7 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
         ) {
             if (activeBike == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No active motorcycle selected.", color = Color.Gray)
+                    Text(tr("No active motorcycle selected.", "Nie je vybraný žiadny aktívny motocykel."), color = Color.Gray)
                 }
                 return@Scaffold
             }
@@ -98,7 +107,7 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "FUEL ECONOMY OVERVIEW",
+                        text = tr("FUEL ECONOMY OVERVIEW", "PREHĽAD SPOTREBY PALIVA"),
                         color = Color(0xFF6B7A99),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -112,7 +121,7 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text("AVG CONSUMPTION", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            Text(tr("AVG CONSUMPTION", "PRIEM. SPOTREBA"), color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                             SegmentedDigitalText(
                                 text = if (fuelStats.avgLitersPer100Km > 0) String.format("%.2f", fuelStats.avgLitersPer100Km) else "—",
                                 unit = "L/100",
@@ -121,7 +130,7 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                             )
                         }
                         Column {
-                            Text("EFFICIENCY", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            Text(tr("EFFICIENCY", "EFEKTIVITA"), color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                             SegmentedDigitalText(
                                 text = if (fuelStats.avgKmPerLiter > 0) String.format("%.1f", fuelStats.avgKmPerLiter) else "—",
                                 unit = "KM/L",
@@ -130,10 +139,10 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                             )
                         }
                         Column {
-                            Text("TOTAL SPENT", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            Text(tr("TOTAL SPENT", "CELKOM MINUTÉ"), color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                             SegmentedDigitalText(
                                 text = String.format("%.0f", fuelStats.totalFuelCost),
-                                unit = activeBike!!.currencySymbol,
+                                unit = currency,
                                 color = RacingAmberPrimary,
                                 fontSize = 18.sp
                             )
@@ -149,17 +158,17 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Total Liters: ${String.format("%.1f", fuelStats.totalLiters)} L",
+                            text = tr("Total Liters: ${String.format("%.1f", fuelStats.totalLiters)} L", "Celkom: ${String.format("%.1f", fuelStats.totalLiters)} L"),
                             color = Color.LightGray,
                             fontSize = 11.sp
                         )
                         Text(
-                            text = "Total Tracked: ${fuelStats.totalFuelDistanceKm.toInt()} km",
+                            text = tr("Tracked: ${fuelStats.totalFuelDistanceKm.toInt()} km", "Sledované: ${fuelStats.totalFuelDistanceKm.toInt()} km"),
                             color = Color.LightGray,
                             fontSize = 11.sp
                         )
                         Text(
-                            text = "Fill-ups: ${fuelLogs.size}",
+                            text = tr("Fill-ups: ${fuelLogs.size}", "Tankovania: ${fuelLogs.size}"),
                             color = Color.LightGray,
                             fontSize = 11.sp
                         )
@@ -178,7 +187,10 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                     contentAlignment = Alignment.TopCenter
                 ) {
                     Text(
-                        text = "No fuel logs yet. Tap '+ ADD FILL-UP' to log your first tank.",
+                        text = tr(
+                            "No fuel logs yet. Tap '+ ADD FILL-UP' to log your first tank.",
+                            "Zatiaľ žiadne záznamy tankovania. Klepnite na '+ PRIDAŤ TANKOVANIE' pre prvý záznam."
+                        ),
                         color = Color.Gray,
                         fontSize = 13.sp
                     )
@@ -191,16 +203,13 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
                     items(fuelLogs, key = { it.fuelId }) { log ->
                         FuelLogCard(
                             log = log,
-                            currency = activeBike!!.currencySymbol,
+                            currency = currency,
                             onEdit = {
                                 editingFuelLog = log
                                 showAddEditDialog = true
                             },
                             onDelete = {
-                                scope.launch {
-                                    viewModel.deleteFuelLog(log.fuelId)
-                                    snackbarHostState.showSnackbar("Fuel log deleted")
-                                }
+                                pendingDeleteFuelLog = log
                             }
                         )
                     }
@@ -217,12 +226,51 @@ fun FuelScreen(viewModel: MainViewModel, navController: NavController) {
             onSave = { entity ->
                 if (editingFuelLog != null) {
                     viewModel.updateFuelLog(entity)
-                    scope.launch { snackbarHostState.showSnackbar("Fuel log updated") }
+                    scope.launch { snackbarHostState.showSnackbar(appLang.pick("Fuel log updated", "Záznam tankovania aktualizovaný")) }
                 } else {
                     viewModel.addFuelLog(entity)
-                    scope.launch { snackbarHostState.showSnackbar("Fill-up logged") }
+                    scope.launch { snackbarHostState.showSnackbar(appLang.pick("Fill-up logged", "Tankovanie zaznamenané")) }
                 }
                 showAddEditDialog = false
+            }
+        )
+    }
+
+    pendingDeleteFuelLog?.let { logToDelete ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteFuelLog = null },
+            containerColor = TftSurfaceDark,
+            title = {
+                Text(
+                    text = tr("Delete Fuel Log", "Vymazať záznam tankovania"),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = tr(
+                        "Are you sure you want to delete the ${logToDelete.liters} L fill-up from ${logToDelete.dateIso}? This cannot be undone.",
+                        "Naozaj chcete vymazať tankovanie ${logToDelete.liters} L zo dňa ${logToDelete.dateIso}? Túto akciu nemožno vrátiť späť."
+                    ),
+                    color = Color.LightGray
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteFuelLog(logToDelete.fuelId)
+                    pendingDeleteFuelLog = null
+                    scope.launch {
+                        snackbarHostState.showSnackbar(appLang.pick("Fuel log deleted", "Záznam tankovania vymazaný"))
+                    }
+                }) {
+                    Text(tr("Delete", "Vymazať"), color = RedlineCrimson, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteFuelLog = null }) {
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
+                }
             }
         )
     }
@@ -266,7 +314,7 @@ private fun FuelLogCard(
                             border = BorderStroke(1.dp, ApexEmeraldGreen.copy(alpha = 0.5f))
                         ) {
                             Text(
-                                text = "FULL TANK",
+                                text = tr("FULL TANK", "PLNÁ NÁDRŽ"),
                                 color = ApexEmeraldGreen,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
@@ -278,7 +326,7 @@ private fun FuelLogCard(
 
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${log.dateIso} • Odo: ${log.odometerKm.toInt()} km",
+                    text = "${log.dateIso} • ${tr("Odo", "Tach")}: ${log.odometerKm.toInt()} km",
                     color = Color.Gray,
                     fontSize = 12.sp
                 )
@@ -313,7 +361,7 @@ private fun FuelLogCard(
 
                 Spacer(modifier = Modifier.width(4.dp))
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = RedlineCrimson.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Delete, contentDescription = tr("Delete", "Vymazať"), tint = RedlineCrimson.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -334,6 +382,8 @@ private fun AddEditFuelDialog(
     var totalCostText by remember { mutableStateOf(existing?.totalCost?.toString() ?: "") }
     var isFullTank by remember { mutableStateOf(existing?.isFullTank ?: true) }
     var notes by remember { mutableStateOf(existing?.notes ?: "") }
+    var showLitersError by remember { mutableStateOf(false) }
+    val currency = activeBike.currencySymbol.ifBlank { "€" }
 
     // Auto-compute total cost if liters and pricePerLiter change
     LaunchedEffect(litersText, pricePerLiterText) {
@@ -349,7 +399,7 @@ private fun AddEditFuelDialog(
         containerColor = TftSurfaceDark,
         title = {
             Text(
-                text = if (existing != null) "Edit Fuel Fill-Up" else "Record Fuel Fill-Up",
+                text = if (existing != null) tr("Edit Fuel Fill-Up", "Upraviť tankovanie") else tr("Record Fuel Fill-Up", "Zaznamenať tankovanie"),
                 color = Color.White,
                 fontWeight = FontWeight.Bold
             )
@@ -360,7 +410,7 @@ private fun AddEditFuelDialog(
                     OutlinedTextField(
                         value = dateIso,
                         onValueChange = { dateIso = it },
-                        label = { Text("Date (YYYY-MM-DD)") },
+                        label = { Text(tr("Date (YYYY-MM-DD)", "Dátum (RRRR-MM-DD)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -372,7 +422,7 @@ private fun AddEditFuelDialog(
                     OutlinedTextField(
                         value = odoText,
                         onValueChange = { odoText = it },
-                        label = { Text("Odo (km)") },
+                        label = { Text(tr("Odo (km)", "Tachometer (km)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -386,11 +436,19 @@ private fun AddEditFuelDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = litersText,
-                        onValueChange = { litersText = it },
-                        label = { Text("Liters (L)") },
+                        onValueChange = {
+                            litersText = it
+                            if (showLitersError) showLitersError = false
+                        },
+                        label = { Text(tr("Liters (L)", "Litre (L)")) },
+                        isError = showLitersError,
+                        supportingText = if (showLitersError) {
+                            { Text(tr("Enter liters > 0", "Zadajte litre > 0"), color = RedlineCrimson, fontSize = 11.sp) }
+                        } else null,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
+                            errorBorderColor = RedlineCrimson,
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
                         ),
@@ -399,7 +457,7 @@ private fun AddEditFuelDialog(
                     OutlinedTextField(
                         value = pricePerLiterText,
                         onValueChange = { pricePerLiterText = it },
-                        label = { Text("Price/L") },
+                        label = { Text(tr("Price/L", "Cena/L")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -413,7 +471,7 @@ private fun AddEditFuelDialog(
                 OutlinedTextField(
                     value = totalCostText,
                     onValueChange = { totalCostText = it },
-                    label = { Text("Total Cost (${activeBike.currencySymbol})") },
+                    label = { Text(tr("Total Cost ($currency)", "Celková cena ($currency)")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -426,7 +484,7 @@ private fun AddEditFuelDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Fuel Station / Brand / Notes") },
+                    label = { Text(tr("Fuel Station / Brand / Notes", "Čerpacia stanica / Značka / Poznámky")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -441,7 +499,7 @@ private fun AddEditFuelDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Full Tank Fill-up", color = Color.LightGray, fontSize = 13.sp)
+                    Text(tr("Full Tank Fill-up", "Plná nádrž"), color = Color.LightGray, fontSize = 13.sp)
                     Switch(
                         checked = isFullTank,
                         onCheckedChange = { isFullTank = it },
@@ -457,6 +515,10 @@ private fun AddEditFuelDialog(
             Button(
                 onClick = {
                     val liters = litersText.toSafeDouble()
+                    if (liters <= 0.0) {
+                        showLitersError = true
+                        return@Button
+                    }
                     val pricePerL = pricePerLiterText.toSafeDouble()
                     val total = totalCostText.toSafeDouble(liters * pricePerL)
                     val odo = odoText.toSafeDouble(activeBike.totalOdometerKm)
@@ -476,11 +538,11 @@ private fun AddEditFuelDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
-                Text("Save Fill-up", fontWeight = FontWeight.Bold)
+                Text(tr("Save Fill-up", "Uložiť tankovanie"), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+            TextButton(onClick = onDismiss) { Text(tr("Cancel", "Zrušiť"), color = Color.Gray) }
         }
     )
 }

@@ -129,6 +129,25 @@ data class TechnicalSpecsDto(
     }
 }
 
+private val SLOVAK_TORQUE_NAMES = mapOf(
+    "Rear Axle Nut" to "Matica zadnej osi",
+    "Front Axle" to "Predná os",
+    "Front Axle Pinch Bolts" to "Poistné skrutky prednej osi",
+    "Oil Drain Plug" to "Výpustná skrutka oleja",
+    "Oil Filter" to "Olejový filter",
+    "Front Brake Caliper Bolts" to "Skrutky predného brzdového strmeňa",
+    "Rear Brake Caliper Bolts" to "Skrutky zadného brzdového strmeňa",
+    "Brake Bleed Nipple" to "Odvzdušňovák bŕzd",
+    "Spark Plugs" to "Zapaľovacie sviečky",
+    "Water Pump Drain Bolt" to "Výpustná skrutka vodnej pumpy",
+    "Cylinder Coolant Drain Bolt" to "Výpustná skrutka chladiacej kvapaliny valca"
+)
+
+fun localizeTorqueName(name: String, langCode: String): String {
+    if (!langCode.equals("sk", ignoreCase = true)) return name
+    return SLOVAK_TORQUE_NAMES[name] ?: name
+}
+
 @Serializable
 data class MaintenanceTaskDto(
     val taskId: String,

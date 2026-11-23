@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -255,11 +256,19 @@ fun TelemetryHistoryScreen(
                     navigationIcon = {
                         if (onBack != null) {
                             IconButton(onClick = onBack) {
-                                Icon(Icons.Filled.ArrowBack, contentDescription = tr("Back", "Späť"), tint = RacingAmberPrimary)
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Back", "Späť"), tint = RacingAmberPrimary)
                             }
                         }
                     },
                     actions = {
+                        TextButton(onClick = { viewModel.toggleAppLanguage() }) {
+                            Text(
+                                text = if (appLang == AppLang.EN) "EN ▸ SK" else "SK ▸ EN",
+                                color = TelemetryIceCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
                         TextButton(
                             onClick = {
                                 importGpxLauncher.launch(arrayOf("application/gpx+xml", "application/xml", "text/xml", "*/*"))
@@ -289,7 +298,7 @@ fun TelemetryHistoryScreen(
                             selectedRide = null
                             scrubbedTimestampMs = null
                         }) {
-                            Icon(Icons.Filled.ArrowBack, contentDescription = tr("Back", "Späť"), tint = RacingAmberPrimary)
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Back", "Späť"), tint = RacingAmberPrimary)
                         }
                     },
                     actions = {
@@ -529,8 +538,8 @@ fun TelemetryHistoryScreen(
                     items(displayedRides, key = { it.rideId }) { ride ->
                         val sdf = remember { SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()) }
                         val dateStr = remember(ride.startTimeEpochMs) { sdf.format(Date(ride.startTimeEpochMs)) }
-                        val bikeName = remember(ride.motorcycleId, allBikes) {
-                            allBikes.find { it.id == ride.motorcycleId }?.displayName ?: "Motorcycle"
+                        val bikeName = remember(ride.motorcycleId, allBikes, appLang) {
+                            allBikes.find { it.id == ride.motorcycleId }?.displayName ?: appLang.pick("Motorcycle", "Motocykel")
                         }
                         val durationSeconds = remember(ride.startTimeEpochMs, ride.endTimeEpochMs) {
                             ((ride.endTimeEpochMs - ride.startTimeEpochMs) / 1000).coerceAtLeast(0L)
@@ -655,8 +664,8 @@ fun TelemetryHistoryScreen(
             val durationSeconds = remember(ride.startTimeEpochMs, ride.endTimeEpochMs) {
                 ((ride.endTimeEpochMs - ride.startTimeEpochMs) / 1000).coerceAtLeast(0L)
             }
-            val bikeDisplayName = remember(ride.motorcycleId, allBikes) {
-                allBikes.find { it.id == ride.motorcycleId }?.displayName ?: "Motorcycle"
+            val bikeDisplayName = remember(ride.motorcycleId, allBikes, appLang) {
+                allBikes.find { it.id == ride.motorcycleId }?.displayName ?: appLang.pick("Motorcycle", "Motocykel")
             }
 
             LazyColumn(
@@ -896,7 +905,7 @@ fun TelemetryHistoryScreen(
                                 )
                             }
 
-                            Divider(color = TitaniumBorder, thickness = 0.5.dp)
+                            HorizontalDivider(color = TitaniumBorder, thickness = 0.5.dp)
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 DetailMetricTile(
@@ -916,7 +925,7 @@ fun TelemetryHistoryScreen(
                                 )
                             }
 
-                            Divider(color = TitaniumBorder, thickness = 0.5.dp)
+                            HorizontalDivider(color = TitaniumBorder, thickness = 0.5.dp)
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 DetailMetricTile(
@@ -936,7 +945,7 @@ fun TelemetryHistoryScreen(
                                 )
                             }
 
-                            Divider(color = TitaniumBorder, thickness = 0.5.dp)
+                            HorizontalDivider(color = TitaniumBorder, thickness = 0.5.dp)
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 DetailMetricTile(
@@ -1030,19 +1039,19 @@ fun TelemetryHistoryScreen(
                                 FilterChip(
                                     selected = cornerDirectionFilter == "ALL",
                                     onClick = { cornerDirectionFilter = "ALL" },
-                                    label = { Text("All (${cornerEvents.size})", fontSize = 10.sp) },
+                                    label = { Text(tr("All (${cornerEvents.size})", "Všetky (${cornerEvents.size})"), fontSize = 10.sp) },
                                     modifier = Modifier.height(28.dp)
                                 )
                                 FilterChip(
                                     selected = cornerDirectionFilter == "LEFT",
                                     onClick = { cornerDirectionFilter = "LEFT" },
-                                    label = { Text("Left ($leftCount)", fontSize = 10.sp) },
+                                    label = { Text(tr("Left ($leftCount)", "Ľavé ($leftCount)"), fontSize = 10.sp) },
                                     modifier = Modifier.height(28.dp)
                                 )
                                 FilterChip(
                                     selected = cornerDirectionFilter == "RIGHT",
                                     onClick = { cornerDirectionFilter = "RIGHT" },
-                                    label = { Text("Right ($rightCount)", fontSize = 10.sp) },
+                                    label = { Text(tr("Right ($rightCount)", "Pravé ($rightCount)"), fontSize = 10.sp) },
                                     modifier = Modifier.height(28.dp)
                                 )
                             }
@@ -1090,7 +1099,7 @@ fun TelemetryHistoryScreen(
                                             }
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                "${String.format(Locale.US, "%.1f", corner.apexLeanDeg)}° lean",
+                                                "${String.format(Locale.US, "%.1f", corner.apexLeanDeg)}° ${tr("lean", "náklon")}",
                                                 color = Color.LightGray,
                                                 fontSize = 11.sp
                                             )
@@ -1100,7 +1109,7 @@ fun TelemetryHistoryScreen(
                                                 fontSize = 10.sp
                                             )
                                             Text(
-                                                "Score: ${corner.cornerScore.toInt()}",
+                                                "${tr("Score", "Skóre")}: ${corner.cornerScore.toInt()}",
                                                 color = ApexEmeraldGreen,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 11.sp
@@ -1211,7 +1220,7 @@ fun TelemetryHistoryScreen(
                                 modifier = Modifier.align(Alignment.CenterHorizontally)
                             )
                             Text(
-                                "Chicken Strips: L: ${String.format(Locale.US, "%.1f", 100f - (ride.maxLeanLeftDeg.toFloat() / 60f).coerceIn(0f, 1f) * 100f)}% | R: ${String.format(Locale.US, "%.1f", 100f - (ride.maxLeanRightDeg.toFloat() / 60f).coerceIn(0f, 1f) * 100f)}%",
+                                "${tr("Chicken Strips", "Nevyužitý okraj")}: ${tr("L", "Ľ")}: ${String.format(Locale.US, "%.1f", 100f - (ride.maxLeanLeftDeg.toFloat() / 60f).coerceIn(0f, 1f) * 100f)}% | ${tr("R", "P")}: ${String.format(Locale.US, "%.1f", 100f - (ride.maxLeanRightDeg.toFloat() / 60f).coerceIn(0f, 1f) * 100f)}%",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.LightGray,
                                 modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -1310,7 +1319,7 @@ fun PodiumCard(
             Text("#$rank", fontWeight = FontWeight.Bold, color = color, style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(4.dp))
             Text("T${corner.sequenceNumber} (${corner.direction.take(1)})", style = MaterialTheme.typography.bodySmall, color = Color.White)
-            Text("Score: ${corner.cornerScore.toInt()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("${tr("Score", "Skóre")}: ${corner.cornerScore.toInt()}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = Color.White)
             Text("${String.format(Locale.US, "%.1f", corner.apexLeanDeg)}°", style = MaterialTheme.typography.bodySmall, color = Color.LightGray)
         }
     }

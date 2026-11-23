@@ -26,8 +26,9 @@ class BiquadButterworthFilter(
     }
 
     private fun configure(sampleRateHz: Double, cutoffHz: Double) {
-        val nyquist = sampleRateHz / 2.0
-        val omega = 2.0 * PI * (cutoffHz / nyquist)
+        val safeRate = if (sampleRateHz.isFinite() && sampleRateHz > 0.0) sampleRateHz else 100.0
+        val safeCutoff = (if (cutoffHz.isFinite()) cutoffHz else 3.5).coerceIn(0.001, safeRate * 0.499)
+        val omega = 2.0 * PI * (safeCutoff / safeRate)
         val sn = sin(omega)
         val cs = cos(omega)
         val alpha = (sn / (2.0 * 1.0 / sqrt(2.0))).takeIf { it.isFinite() } ?: 0.0

@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -123,7 +124,7 @@ fun MotoGeekDrawerSheet(
             // SECTION 2: GARAGE & SERVICE
             DrawerSectionHeader(tr("GARAGE & SERVICE", "GARÁŽ A SERVIS"))
             DrawerTftItem(tr("Bike Profile & Torques", "Profil motorky a momenty"), "bike_info", Icons.Default.TwoWheeler, currentRoute, onNavigate)
-            DrawerTftItem(tr("Maintenance Hub (3-Tab)", "Servis a údržba (3 karty)"), "maintenance", Icons.Default.Build, currentRoute, onNavigate)
+            DrawerTftItem(tr("Maintenance & Service", "Údržba a servis"), "maintenance", Icons.Default.Build, currentRoute, onNavigate)
             DrawerTftItem(tr("Fuel & Consumption", "Tankovanie a spotreba"), "fuel", Icons.Default.LocalGasStation, currentRoute, onNavigate)
             DrawerTftItem(tr("Parts & Mods", "Diely a úpravy"), "parts", Icons.Default.Handyman, currentRoute, onNavigate)
             DrawerTftItem(tr("Service Reminders", "Pripomienky"), "reminders", Icons.Default.Notifications, currentRoute, onNavigate)
@@ -143,7 +144,7 @@ fun MotoGeekDrawerSheet(
 
             // SECTION 4: SYSTEM
             DrawerSectionHeader(tr("SYSTEM", "SYSTÉM"))
-            DrawerTftItem(tr("Activity Timeline (Logs)", "História aktivít (Logy)"), "logs", Icons.Default.Article, currentRoute, onNavigate)
+            DrawerTftItem(tr("Activity Timeline (Logs)", "História aktivít (Logy)"), "logs", Icons.AutoMirrored.Filled.Article, currentRoute, onNavigate)
             DrawerTftItem(tr("Sensor Diagnostics & About", "Diagnostika senzorov a info"), "about", Icons.Default.Info, currentRoute, onNavigate)
 
             Spacer(modifier = Modifier.height(24.dp))

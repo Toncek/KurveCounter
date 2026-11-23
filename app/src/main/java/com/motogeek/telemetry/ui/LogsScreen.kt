@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +39,16 @@ private data class ActivityItem(
     val color: Color
 )
 
+private fun localizedCategoryLabel(category: String, appLang: AppLang): String = when (category.uppercase()) {
+    "ALL" -> appLang.pick("ALL", "VŠETKO")
+    "RIDES" -> appLang.pick("RIDES", "JAZDY")
+    "SERVICE" -> appLang.pick("SERVICE", "SERVIS")
+    "FUEL" -> appLang.pick("FUEL", "PALIVO")
+    "PARTS" -> appLang.pick("PARTS", "DIELY")
+    "SYSTEM" -> appLang.pick("SYSTEM", "SYSTÉM")
+    else -> category.uppercase()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
@@ -50,12 +61,15 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val appLang = LocalAppLang.current
+    val currency = activeBike?.currencySymbol?.ifBlank { "€" } ?: "€"
 
     var selectedFilter by remember { mutableStateOf("ALL") }
     var searchQuery by remember { mutableStateOf("") }
+    var showClearConfirmDialog by remember { mutableStateOf(false) }
     val categories = listOf("ALL", "RIDES", "SERVICE", "FUEL", "PARTS", "SYSTEM")
 
-    val unifiedTimeline = remember(appLogs, fuelLogs, serviceLogs, partLogs, rides) {
+    val unifiedTimeline = remember(appLogs, fuelLogs, serviceLogs, partLogs, rides, currency, appLang) {
         val items = mutableListOf<ActivityItem>()
 
         // 1. App Activity Logs
@@ -81,8 +95,12 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
                     id = "ride_${ride.rideId}",
                     timestampMs = ride.startTimeEpochMs,
                     category = "RIDES",
-                    title = ride.name?.ifBlank { "Ride #${ride.rideId}" } ?: "Ride #${ride.rideId}",
-                    details = "${String.format("%.1f", ride.distanceKm)} km • Peak Lean: ${ride.maxLeanLeftDeg.toInt()}°L / ${ride.maxLeanRightDeg.toInt()}°R • ${ride.avgSpeedKmh.toInt()} km/h avg",
+                    title = ride.name?.ifBlank { appLang.pick("Ride #${ride.rideId}", "Jazda #${ride.rideId}") }
+                        ?: appLang.pick("Ride #${ride.rideId}", "Jazda #${ride.rideId}"),
+                    details = appLang.pick(
+                        "${String.format("%.1f", ride.distanceKm)} km • Peak Lean: ${ride.maxLeanLeftDeg.toInt()}°L / ${ride.maxLeanRightDeg.toInt()}°R • ${ride.avgSpeedKmh.toInt()} km/h avg",
+                        "${String.format("%.1f", ride.distanceKm)} km • Max náklon: ${ride.maxLeanLeftDeg.toInt()}°Ľ / ${ride.maxLeanRightDeg.toInt()}°P • ${ride.avgSpeedKmh.toInt()} km/h priem."
+                    ),
                     dateDisplay = Instant.ofEpochMilli(ride.startTimeEpochMs).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm")),
                     icon = Icons.Default.Speed,
                     color = RacingAmberPrimary
@@ -102,7 +120,10 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
                     timestampMs = epoch,
                     category = "SERVICE",
                     title = s.serviceTitle,
-                    details = "Odo: ${s.odometerAtServiceKm.toInt()} km • ${s.locationOrShop} ${if (s.costEur > 0) "• ${s.costEur.toInt()} €" else ""} • ${s.notes}",
+                    details = appLang.pick(
+                        "Odo: ${s.odometerAtServiceKm.toInt()} km • ${s.locationOrShop} ${if (s.costEur > 0) "• ${s.costEur.toInt()} $currency" else ""} • ${s.notes}",
+                        "Tach: ${s.odometerAtServiceKm.toInt()} km • ${s.locationOrShop} ${if (s.costEur > 0) "• ${s.costEur.toInt()} $currency" else ""} • ${s.notes}"
+                    ),
                     dateDisplay = s.performedAtIsoDate,
                     icon = Icons.Default.Build,
                     color = ApexEmeraldGreen
@@ -121,8 +142,11 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
                     id = "fuel_${f.fuelId}",
                     timestampMs = epoch,
                     category = "FUEL",
-                    title = "${f.liters} L Fill-up",
-                    details = "Total: ${String.format("%.2f", f.totalCost)} € • Odo: ${f.odometerKm.toInt()} km ${if (f.notes.isNotBlank()) "• ${f.notes}" else ""}",
+                    title = appLang.pick("${f.liters} L Fill-up", "${f.liters} L Tankovanie"),
+                    details = appLang.pick(
+                        "Total: ${String.format("%.2f", f.totalCost)} $currency • Odo: ${f.odometerKm.toInt()} km ${if (f.notes.isNotBlank()) "• ${f.notes}" else ""}",
+                        "Celkom: ${String.format("%.2f", f.totalCost)} $currency • Tach: ${f.odometerKm.toInt()} km ${if (f.notes.isNotBlank()) "• ${f.notes}" else ""}"
+                    ),
                     dateDisplay = f.dateIso,
                     icon = Icons.Default.LocalGasStation,
                     color = TelemetryIceCyan
@@ -141,8 +165,11 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
                     id = "part_${p.partId}",
                     timestampMs = epoch,
                     category = "PARTS",
-                    title = "Part: ${p.partName}",
-                    details = "${p.brand} ${p.partNumber} • ${p.cost.toInt()} € • Installed at ${p.odometerKm.toInt()} km",
+                    title = appLang.pick("Part: ${p.partName}", "Diel: ${p.partName}"),
+                    details = appLang.pick(
+                        "${p.brand} ${p.partNumber} • ${p.cost.toInt()} $currency • Installed at ${p.odometerKm.toInt()} km",
+                        "${p.brand} ${p.partNumber} • ${p.cost.toInt()} $currency • Namontované pri ${p.odometerKm.toInt()} km"
+                    ),
                     dateDisplay = p.dateIso,
                     icon = Icons.Default.Handyman,
                     color = WarningGold
@@ -165,7 +192,7 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Activity Timeline & Logs",
+                        text = tr("Activity Timeline & Logs", "Časová os & záznamy"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -177,15 +204,18 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
                             navController.navigate("home")
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = RacingAmberPrimary)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = tr("Back", "Späť"),
+                            tint = RacingAmberPrimary
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        viewModel.clearAppLogs()
-                        scope.launch { snackbarHostState.showSnackbar("Activity system logs cleared") }
-                    }) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "Clear", tint = Color.Gray)
+                    if (selectedFilter == "ALL" || selectedFilter == "SYSTEM") {
+                        IconButton(onClick = { showClearConfirmDialog = true }) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = tr("Clear", "Vymazať"), tint = Color.Gray)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -205,7 +235,7 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search activity feed...", color = Color.Gray, fontSize = 12.sp) },
+                placeholder = { Text(tr("Search activity feed...", "Hľadať v záznamoch aktivity..."), color = Color.Gray, fontSize = 12.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp)) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = RacingAmberPrimary,
@@ -228,7 +258,7 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
                     FilterChip(
                         selected = selectedFilter == cat,
                         onClick = { selectedFilter = cat },
-                        label = { Text(cat, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        label = { Text(localizedCategoryLabel(cat, appLang), fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = RacingAmberPrimary.copy(alpha = 0.2f),
                             selectedLabelColor = RacingAmberPrimary
@@ -241,7 +271,7 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
 
             if (filtered.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No activities found.", color = Color.Gray)
+                    Text(tr("No activities found.", "Nenašli sa žiadne aktivity."), color = Color.Gray)
                 }
             } else {
                 LazyColumn(
@@ -249,16 +279,57 @@ fun LogsScreen(viewModel: MainViewModel, navController: NavController) {
                     contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
                     items(filtered, key = { it.id }) { item ->
-                        TimelineItemCard(item = item)
+                        TimelineItemCard(item = item, appLang = appLang)
                     }
                 }
             }
         }
     }
+
+    if (showClearConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmDialog = false },
+            containerColor = TftSurfaceDark,
+            title = {
+                Text(
+                    text = tr("Clear System Logs", "Vymazať systémové záznamy"),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = tr(
+                        "Are you sure you want to clear all system activity logs? Ride, service, fuel, and part records will remain untouched.",
+                        "Naozaj chcete vymazať všetky systémové záznamy aktivity? Záznamy jázd, servisu, tankovania a dielov zostanú zachované."
+                    ),
+                    color = Color.LightGray
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearAppLogs()
+                    showClearConfirmDialog = false
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            appLang.pick("Activity system logs cleared", "Systémové záznamy aktivity boli vymazané")
+                        )
+                    }
+                }) {
+                    Text(tr("Clear Logs", "Vymazať záznamy"), color = RedlineCrimson, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmDialog = false }) {
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun TimelineItemCard(item: ActivityItem) {
+private fun TimelineItemCard(item: ActivityItem, appLang: AppLang) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
@@ -302,7 +373,7 @@ private fun TimelineItemCard(item: ActivityItem) {
                         color = item.color.copy(alpha = 0.15f)
                     ) {
                         Text(
-                            text = item.category,
+                            text = localizedCategoryLabel(item.category, appLang),
                             color = item.color,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.ExtraBold,

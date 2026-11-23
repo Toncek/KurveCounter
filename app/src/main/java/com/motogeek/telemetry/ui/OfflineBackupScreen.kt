@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -109,7 +110,11 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
                             navController.navigate("home")
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = RacingAmberPrimary)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = tr("Back", "Späť"),
+                            tint = RacingAmberPrimary
+                        )
                     }
                 },
                 actions = {
@@ -419,6 +424,7 @@ fun OfflineBackupScreen(viewModel: MainViewModel, navController: NavController) 
 @Composable
 fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: SnackbarHostState?) {
     val context = LocalContext.current
+    val appLang = LocalAppLang.current
     val syncStatus by DriveSyncScheduler.status.collectAsState()
     var confirmSyncAccount by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -461,9 +467,12 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                 }
                 if (res.isSuccess) {
                     lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
-                    snackbarHostState?.showSnackbar("Cloud backup successful")
+                    snackbarHostState?.showSnackbar(
+                        appLang.pick("Cloud backup successful", "Cloudová záloha bola úspešne vytvorená")
+                    )
                 } else {
-                    accountError = res.exceptionOrNull()?.message ?: "Backup failed"
+                    accountError = res.exceptionOrNull()?.message
+                        ?: appLang.pick("Backup failed", "Zálohovanie zlyhalo")
                 }
             }
         }
@@ -482,9 +491,20 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                     isRestoring = false
                 }
                 if (res.isSuccess) {
-                    snackbarHostState?.showSnackbar("Restore from Drive (${pendingRestoreMode.name}) successful")
+                    val modeLabel = if (pendingRestoreMode == RestoreMode.MERGE) {
+                        appLang.pick("Merge", "Zlúčenie")
+                    } else {
+                        appLang.pick("Replace", "Nahradenie")
+                    }
+                    snackbarHostState?.showSnackbar(
+                        appLang.pick(
+                            "Restore from Drive ($modeLabel) successful",
+                            "Obnovenie z Disku ($modeLabel) bolo úspešné"
+                        )
+                    )
                 } else {
-                    accountError = res.exceptionOrNull()?.message ?: "Restore failed"
+                    accountError = res.exceptionOrNull()?.message
+                        ?: appLang.pick("Restore failed", "Obnovenie zlyhalo")
                 }
             }
         }
@@ -494,9 +514,15 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
         viewModel.googleAuthManager.refreshAccount()
         accountError = if (result.resultCode == android.app.Activity.RESULT_OK) {
             DriveSyncScheduler.enqueue(context, afterCurrent = true)
-            "Drive access granted. Sync queued."
+            appLang.pick(
+                "Drive access granted. Sync queued.",
+                "Prístup k Disku povolený. Synchronizácia zaradená do frontu."
+            )
         } else {
-            "Drive access was cancelled. Allow access to back up or restore."
+            appLang.pick(
+                "Drive access was cancelled. Allow access to back up or restore.",
+                "Prístup k Disku bol zrušený. Povoľte prístup pre zálohovanie alebo obnovenie."
+            )
         }
     }
 
@@ -509,13 +535,19 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
             openDocLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
             return
         }
-        accountError = error?.message ?: "Google Drive operation failed. Please try again."
+        accountError = error?.message ?: appLang.pick(
+            "Google Drive operation failed. Please try again.",
+            "Operácia Disku Google zlyhala. Skúste to znova."
+        )
         val recoveryIntent = (error as? com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException)?.intent
         if (recoveryIntent != null) {
             try {
                 authorizationLauncher.launch(recoveryIntent)
             } catch (e: Exception) {
-                accountError = "Unable to open Google authorization. Check Google Play services and try again."
+                accountError = appLang.pick(
+                    "Unable to open Google authorization. Check Google Play services and try again.",
+                    "Nepodarilo sa otvoriť autorizáciu Google. Skontrolujte Služby Google Play a skúste to znova."
+                )
             }
         }
     }
@@ -523,7 +555,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
     val googleSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         isSigningIn = false
         if (result.resultCode == android.app.Activity.RESULT_CANCELED) {
-            accountError = "Google sign-in cancelled."
+            accountError = appLang.pick("Google sign-in cancelled.", "Prihlásenie cez Google bolo zrušené.")
             return@rememberLauncherForActivityResult
         }
         try {
@@ -532,13 +564,25 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
             lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
         } catch (e: com.google.android.gms.common.api.ApiException) {
             accountError = when (e.statusCode) {
-                12501 -> "Google sign-in cancelled."
-                7 -> "Check your internet connection and try signing in again."
-                10, 12500 -> "Google sign-in configuration error. Check the Android OAuth client package and signing SHA-1 in Google Cloud."
-                else -> "Google sign-in failed (${e.statusCode}). Please try again."
+                12501 -> appLang.pick("Google sign-in cancelled.", "Prihlásenie cez Google bolo zrušené.")
+                7 -> appLang.pick(
+                    "Check your internet connection and try signing in again.",
+                    "Skontrolujte pripojenie k internetu a skúste sa prihlásiť znova."
+                )
+                10, 12500 -> appLang.pick(
+                    "Google sign-in configuration error. Check the Android OAuth client package and signing SHA-1 in Google Cloud.",
+                    "Chyba konfigurácie prihlásenia Google. Skontrolujte balík Android OAuth klienta a podpisový SHA-1 v Google Cloud."
+                )
+                else -> appLang.pick(
+                    "Google sign-in failed (${e.statusCode}). Please try again.",
+                    "Prihlásenie cez Google zlyhalo (${e.statusCode}). Skúste to znova."
+                )
             }
         } catch (e: Exception) {
-            accountError = e.message ?: "Google sign-in failed. Please try again."
+            accountError = e.message ?: appLang.pick(
+                "Google sign-in failed. Please try again.",
+                "Prihlásenie cez Google zlyhalo. Skúste to znova."
+            )
         }
     }
 
@@ -549,7 +593,10 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
             googleSignInLauncher.launch(viewModel.googleAuthManager.getSignInIntent())
         } catch (e: Exception) {
             isSigningIn = false
-            accountError = "Unable to open Google sign-in. Check Google Play services and try again."
+            accountError = appLang.pick(
+                "Unable to open Google sign-in. Check Google Play services and try again.",
+                "Nepodarilo sa otvoriť prihlásenie Google. Skontrolujte Služby Google Play a skúste to znova."
+            )
         }
     }
     val isBusy = isBackingUp || isRestoring || isSigningIn || isSigningOut || syncStatus.phase == DriveSyncPhase.SYNCING
@@ -589,7 +636,7 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                 ) {
                     Icon(
                         Icons.Default.AccountCircle,
-                        contentDescription = "Google Icon",
+                        contentDescription = tr("Google Icon", "Ikona Google"),
                         modifier = Modifier.size(20.dp),
                         tint = DarkCharcoalBg
                     )
@@ -678,7 +725,9 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                                 }
                                 if (res.isSuccess) {
                                     lastCloudBackupTime = viewModel.googleDriveBackupManager.lastBackupTimestamp
-                                    snackbarHostState?.showSnackbar("Cloud backup successful")
+                                    snackbarHostState?.showSnackbar(
+                                        appLang.pick("Cloud backup successful", "Cloudová záloha bola úspešne vytvorená")
+                                    )
                                 } else {
                                     handleCloudFailure(res.exceptionOrNull())
                                 }
@@ -723,7 +772,10 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                accountError = "Sign-out failed. Please try again."
+                                accountError = appLang.pick(
+                                    "Sign-out failed. Please try again.",
+                                    "Odhlásenie zlyhalo. Skúste to znova."
+                                )
                             } finally {
                                 isSigningOut = false
                             }
@@ -820,7 +872,17 @@ fun GoogleDriveCloudSyncCard(viewModel: MainViewModel, snackbarHostState: Snackb
                                 isRestoring = false
                             }
                             if (res.isSuccess) {
-                                snackbarHostState?.showSnackbar("Restore from Drive (${cloudRestoreMode.name}) successful")
+                                val modeLabel = if (cloudRestoreMode == RestoreMode.MERGE) {
+                                    appLang.pick("Merge", "Zlúčenie")
+                                } else {
+                                    appLang.pick("Replace", "Nahradenie")
+                                }
+                                snackbarHostState?.showSnackbar(
+                                    appLang.pick(
+                                        "Restore from Drive ($modeLabel) successful",
+                                        "Obnovenie z Disku ($modeLabel) bolo úspešné"
+                                    )
+                                )
                             } else {
                                 handleCloudFailure(res.exceptionOrNull())
                             }

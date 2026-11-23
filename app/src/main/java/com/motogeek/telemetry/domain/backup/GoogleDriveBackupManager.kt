@@ -43,7 +43,7 @@ class GoogleDriveBackupManager(
 
     suspend fun saveBackupToPickedUri(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val email = currentAccountEmail()
+            currentAccountEmail()
                 ?: return@withContext Result.failure(Exception("Not signed in to Google Drive"))
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -73,7 +73,7 @@ class GoogleDriveBackupManager(
         restoreMode: RestoreMode = RestoreMode.MERGE
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val email = currentAccountEmail()
+            currentAccountEmail()
                 ?: return@withContext Result.failure(Exception("Not signed in to Google Drive"))
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -103,7 +103,7 @@ class GoogleDriveBackupManager(
 
     suspend fun backupToDrive(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val email = currentAccountEmail()
+            currentAccountEmail()
                 ?: return@withContext Result.failure(Exception("Not signed in to Google Drive"))
 
             // 1. Try Google Drive REST API if authenticated
@@ -180,7 +180,7 @@ class GoogleDriveBackupManager(
 
     suspend fun restoreFromDrive(restoreMode: RestoreMode = RestoreMode.MERGE): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val email = currentAccountEmail()
+            currentAccountEmail()
                 ?: return@withContext Result.failure(Exception("Not signed in to Google Drive"))
 
             // 1. Try Google Drive REST API if authenticated

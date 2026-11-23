@@ -108,6 +108,7 @@ data class GuidedImportSelection(
 
 object GuidedImportPlanner {
 
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private val lenientJson = Json {
         encodeDefaults = true
         ignoreUnknownKeys = true

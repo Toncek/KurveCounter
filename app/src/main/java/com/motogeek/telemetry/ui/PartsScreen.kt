@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,12 +37,15 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val appLang = LocalAppLang.current
 
     var showAddEditDialog by remember { mutableStateOf(false) }
     var editingPartLog by remember { mutableStateOf<PartLogEntity?>(null) }
+    var pendingDeletePart by remember { mutableStateOf<PartLogEntity?>(null) }
 
     val totalPartsCount = partLogs.size
     val totalInvested = partLogs.sumOf { it.cost }
+    val currency = activeBike?.currencySymbol?.ifBlank { "€" } ?: "€"
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -49,7 +53,7 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Parts & Modifications",
+                        text = tr("Parts & Modifications", "Diely & úpravy"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -61,7 +65,11 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
                             navController.navigate("home")
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = RacingAmberPrimary)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = tr("Back", "Späť"),
+                            tint = RacingAmberPrimary
+                        )
                     }
                 },
                 actions = {
@@ -69,7 +77,7 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
                         editingPartLog = null
                         showAddEditDialog = true
                     }) {
-                        Text("+ ADD PART", color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
+                        Text(tr("+ ADD PART", "+ PRIDAŤ DIEL"), color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -85,7 +93,7 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
         ) {
             if (activeBike == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No active motorcycle selected.", color = Color.Gray)
+                    Text(tr("No active motorcycle selected.", "Nie je vybraný žiadny aktívny motocykel."), color = Color.Gray)
                 }
                 return@Scaffold
             }
@@ -101,7 +109,7 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "PARTS & MODIFICATIONS SUMMARY",
+                        text = tr("PARTS & MODIFICATIONS SUMMARY", "PREHĽAD DIELOV A ÚPRAV"),
                         color = Color(0xFF6B7A99),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -115,19 +123,19 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text("INSTALLED PARTS", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            Text(tr("INSTALLED PARTS", "NAINŠTALOVANÉ DIELY"), color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                             SegmentedDigitalText(
                                 text = "$totalPartsCount",
-                                unit = "ITEMS",
+                                unit = tr("ITEMS", "KS"),
                                 color = TelemetryIceCyan,
                                 fontSize = 18.sp
                             )
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("TOTAL INVESTED", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            Text(tr("TOTAL INVESTED", "CELKOVÁ INVESTÍCIA"), color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                             SegmentedDigitalText(
                                 text = String.format("%,d", totalInvested.toInt()),
-                                unit = activeBike!!.currencySymbol,
+                                unit = currency,
                                 color = RacingAmberPrimary,
                                 fontSize = 18.sp
                             )
@@ -147,7 +155,10 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
                     contentAlignment = Alignment.TopCenter
                 ) {
                     Text(
-                        text = "No parts or mods recorded. Tap '+ ADD PART' to add exhaust, tires, sprockets, etc.",
+                        text = tr(
+                            "No parts or mods recorded. Tap '+ ADD PART' to add exhaust, tires, sprockets, etc.",
+                            "Zatiaľ žiadne diely ani úpravy. Klepnite na '+ PRIDAŤ DIEL' pre pridanie výfuku, pneumatík, reťaze a pod."
+                        ),
                         color = Color.Gray,
                         fontSize = 13.sp
                     )
@@ -160,16 +171,13 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
                     items(partLogs, key = { it.partId }) { part ->
                         PartLogCard(
                             part = part,
-                            currency = activeBike!!.currencySymbol,
+                            currency = currency,
                             onEdit = {
                                 editingPartLog = part
                                 showAddEditDialog = true
                             },
                             onDelete = {
-                                scope.launch {
-                                    viewModel.deletePartLog(part.partId)
-                                    snackbarHostState.showSnackbar("Part log deleted")
-                                }
+                                pendingDeletePart = part
                             }
                         )
                     }
@@ -186,12 +194,51 @@ fun PartsScreen(viewModel: MainViewModel, navController: NavController) {
             onSave = { entity ->
                 if (editingPartLog != null) {
                     viewModel.updatePartLog(entity)
-                    scope.launch { snackbarHostState.showSnackbar("Part updated") }
+                    scope.launch { snackbarHostState.showSnackbar(appLang.pick("Part updated", "Diel aktualizovaný")) }
                 } else {
                     viewModel.addPartLog(entity)
-                    scope.launch { snackbarHostState.showSnackbar("Part installed and logged") }
+                    scope.launch { snackbarHostState.showSnackbar(appLang.pick("Part installed and logged", "Diel nainštalovaný a zaznamenaný")) }
                 }
                 showAddEditDialog = false
+            }
+        )
+    }
+
+    pendingDeletePart?.let { partToDelete ->
+        AlertDialog(
+            onDismissRequest = { pendingDeletePart = null },
+            containerColor = TftSurfaceDark,
+            title = {
+                Text(
+                    text = tr("Delete Part Log", "Vymazať záznam dielu"),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = tr(
+                        "Are you sure you want to delete \"${partToDelete.partName}\"? This cannot be undone.",
+                        "Naozaj chcete vymazať diel \"${partToDelete.partName}\"? Túto akciu nemožno vrátiť späť."
+                    ),
+                    color = Color.LightGray
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deletePartLog(partToDelete.partId)
+                    pendingDeletePart = null
+                    scope.launch {
+                        snackbarHostState.showSnackbar(appLang.pick("Part log deleted", "Záznam dielu vymazaný"))
+                    }
+                }) {
+                    Text(tr("Delete", "Vymazať"), color = RedlineCrimson, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeletePart = null }) {
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
+                }
             }
         )
     }
@@ -232,7 +279,10 @@ private fun PartLogCard(
                     fontSize = 12.sp
                 )
                 Text(
-                    text = "Installed on ${part.dateIso} at ${part.odometerKm.toInt()} km",
+                    text = tr(
+                        "Installed on ${part.dateIso} at ${part.odometerKm.toInt()} km",
+                        "Namontované ${part.dateIso} pri ${part.odometerKm.toInt()} km"
+                    ),
                     color = Color(0xFF8E9BB0),
                     fontSize = 11.sp
                 )
@@ -259,7 +309,7 @@ private fun PartLogCard(
                 }
                 Spacer(modifier = Modifier.width(4.dp))
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = RedlineCrimson.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Delete, contentDescription = tr("Delete", "Vymazať"), tint = RedlineCrimson.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -280,13 +330,15 @@ private fun AddEditPartDialog(
     var dateIso by remember { mutableStateOf(existing?.dateIso ?: LocalDate.now().format(DateTimeFormatter.ISO_DATE)) }
     var odoText by remember { mutableStateOf(existing?.odometerKm?.toInt()?.toString() ?: activeBike.totalOdometerKm.toInt().toString()) }
     var notes by remember { mutableStateOf(existing?.notes ?: "") }
+    var showPartNameError by remember { mutableStateOf(false) }
+    val currency = activeBike.currencySymbol.ifBlank { "€" }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TftSurfaceDark,
         title = {
             Text(
-                text = if (existing != null) "Edit Part / Mod" else "Add Installed Part / Mod",
+                text = if (existing != null) tr("Edit Part / Mod", "Upraviť diel / úpravu") else tr("Add Installed Part / Mod", "Pridať namontovaný diel / úpravu"),
                 color = Color.White,
                 fontWeight = FontWeight.Bold
             )
@@ -295,11 +347,19 @@ private fun AddEditPartDialog(
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = partName,
-                    onValueChange = { partName = it },
-                    label = { Text("Part Name (e.g., Akrapovic Exhaust, DID Chain)") },
+                    onValueChange = {
+                        partName = it
+                        if (showPartNameError && it.isNotBlank()) showPartNameError = false
+                    },
+                    label = { Text(tr("Part Name (e.g., Akrapovic Exhaust, DID Chain)", "Názov dielu (napr. Akrapovič výfuk, DID reťaz)")) },
+                    isError = showPartNameError,
+                    supportingText = if (showPartNameError) {
+                        { Text(tr("Part name is required", "Názov dielu je povinný"), color = RedlineCrimson, fontSize = 11.sp) }
+                    } else null,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
+                        errorBorderColor = RedlineCrimson,
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White
                     ),
@@ -310,7 +370,7 @@ private fun AddEditPartDialog(
                     OutlinedTextField(
                         value = brand,
                         onValueChange = { brand = it },
-                        label = { Text("Brand / OEM") },
+                        label = { Text(tr("Brand / OEM", "Značka / OEM")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -322,7 +382,7 @@ private fun AddEditPartDialog(
                     OutlinedTextField(
                         value = partNumber,
                         onValueChange = { partNumber = it },
-                        label = { Text("Part #") },
+                        label = { Text(tr("Part #", "Kód dielu #")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -337,7 +397,7 @@ private fun AddEditPartDialog(
                     OutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
-                        label = { Text("Cost (${activeBike.currencySymbol})") },
+                        label = { Text(tr("Cost ($currency)", "Cena ($currency)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -349,7 +409,7 @@ private fun AddEditPartDialog(
                     OutlinedTextField(
                         value = odoText,
                         onValueChange = { odoText = it },
-                        label = { Text("Odo (km)") },
+                        label = { Text(tr("Odo (km)", "Tachometer (km)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -363,7 +423,7 @@ private fun AddEditPartDialog(
                 OutlinedTextField(
                     value = dateIso,
                     onValueChange = { dateIso = it },
-                    label = { Text("Date (YYYY-MM-DD)") },
+                    label = { Text(tr("Date (YYYY-MM-DD)", "Dátum (RRRR-MM-DD)")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -376,7 +436,7 @@ private fun AddEditPartDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Notes / Tightening Torque (Nm)") },
+                    label = { Text(tr("Notes / Tightening Torque (Nm)", "Poznámky / Uťahovací moment (Nm)")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -390,6 +450,10 @@ private fun AddEditPartDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    if (partName.isBlank()) {
+                        showPartNameError = true
+                        return@Button
+                    }
                     val cost = costText.toSafeDouble(0.0)
                     val odo = odoText.toSafeDouble(activeBike.totalOdometerKm)
                     val entity = PartLogEntity(
@@ -397,7 +461,7 @@ private fun AddEditPartDialog(
                         motorcycleId = activeBike.id,
                         dateIso = dateIso.ifBlank { LocalDate.now().format(DateTimeFormatter.ISO_DATE) },
                         odometerKm = odo,
-                        partName = partName.ifBlank { "Custom Part" },
+                        partName = partName.trim(),
                         brand = brand.ifBlank { "Aftermarket" },
                         partNumber = partNumber,
                         cost = cost,
@@ -407,11 +471,11 @@ private fun AddEditPartDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
-                Text("Save Part", fontWeight = FontWeight.Bold)
+                Text(tr("Save Part", "Uložiť diel"), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+            TextButton(onClick = onDismiss) { Text(tr("Cancel", "Zrušiť"), color = Color.Gray) }
         }
     )
 }

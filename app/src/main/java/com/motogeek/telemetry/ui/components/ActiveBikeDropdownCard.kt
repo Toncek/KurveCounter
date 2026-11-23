@@ -96,11 +96,11 @@ fun ActiveBikeDropdownCard(
                     Spacer(modifier = Modifier.width(10.dp))
 
                     Column {
-                        val title = activeBike?.displayName?.uppercase() ?: "NO MOTORCYCLE"
+                        val title = activeBike?.displayName?.uppercase() ?: tr("NO MOTORCYCLE", "ŽIADNY MOTOCYKEL")
                         val subtitle = if (activeBike != null) {
                             "${activeBike.year} • ${activeBike.engineDisplacementCc} CC • ${activeBike.make.uppercase()}"
                         } else {
-                            "Select or Add Motorcycle"
+                            tr("Select or Add Motorcycle", "Vybrať alebo pridať motocykel")
                         }
 
                         Text(
@@ -124,7 +124,7 @@ fun ActiveBikeDropdownCard(
                 // Dropdown trigger indicator
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Select Motorcycle",
+                    contentDescription = tr("Select Motorcycle", "Vybrať motocykel"),
                     tint = RacingAmberPrimary,
                     modifier = Modifier.size(28.dp)
                 )
@@ -182,13 +182,13 @@ fun ActiveBikeDropdownCard(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Sync,
-                                contentDescription = "Sync Odometer",
+                                contentDescription = tr("Sync Odometer", "Synchronizovať tachometer"),
                                 tint = RacingAmberPrimary,
                                 modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "SYNC KM",
+                                text = tr("SYNC KM", "UPRAVIŤ KM"),
                                 color = RacingAmberPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -213,7 +213,7 @@ fun ActiveBikeDropdownCard(
                             if (isSelected) {
                                 Icon(
                                     Icons.Default.Check,
-                                    contentDescription = "Active",
+                                    contentDescription = tr("Active", "Aktívny"),
                                     tint = ApexEmeraldGreen,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -244,13 +244,13 @@ fun ActiveBikeDropdownCard(
                 leadingIcon = {
                     Icon(
                         Icons.Default.Add,
-                        contentDescription = "Add New Motorcycle",
+                        contentDescription = tr("Add New Motorcycle", "Pridať nový motocykel"),
                         tint = RacingAmberPrimary
                     )
                 },
                 text = {
                     Text(
-                        "+ Add New Motorcycle",
+                        tr("+ Add New Motorcycle", "+ Pridať nový motocykel"),
                         color = RacingAmberPrimary,
                         fontWeight = FontWeight.Bold
                     )
@@ -269,7 +269,7 @@ fun ActiveBikeDropdownCard(
             containerColor = TftSurfaceDark,
             title = {
                 Text(
-                    text = "Sync Odometer Reading",
+                    text = tr("Sync Odometer Reading", "Úprava stavu tachometra"),
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
@@ -277,7 +277,10 @@ fun ActiveBikeDropdownCard(
             text = {
                 Column {
                     Text(
-                        text = "Enter current dash reading for ${activeBike.displayName}:",
+                        text = tr(
+                            "Enter current dash reading for ${activeBike.displayName}:",
+                            "Zadajte aktuálny stav na prístrojovke pre ${activeBike.displayName}:"
+                        ),
                         color = Color.LightGray,
                         fontSize = 14.sp
                     )
@@ -285,7 +288,7 @@ fun ActiveBikeDropdownCard(
                     OutlinedTextField(
                         value = syncInputKm,
                         onValueChange = { syncInputKm = it },
-                        label = { Text("Odometer (km)") },
+                        label = { Text(tr("Odometer (km)", "Tachometer (km)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -306,12 +309,12 @@ fun ActiveBikeDropdownCard(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
                 ) {
-                    Text("Save Odo", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(tr("Save Odo", "Uložiť km"), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSyncDialog = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
                 }
             }
         )

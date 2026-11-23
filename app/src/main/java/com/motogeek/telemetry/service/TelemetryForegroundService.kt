@@ -77,6 +77,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     private val sessionCorners = mutableListOf<CornerEventEntity>()
 
     private var smoothedBaroAltitudeMeters: Double? = null
+    private var smoothedGpsAltitudeMeters: Double? = null
     private var lastReferenceAltitudeMeters: Double? = null
     private var accumulatedElevationGainMeters: Double = 0.0
     private var hasBarometerSample: Boolean = false
@@ -237,6 +238,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         maxAccelG = 0.0
         maxLateralG = 0.0
         smoothedBaroAltitudeMeters = null
+        smoothedGpsAltitudeMeters = null
         lastReferenceAltitudeMeters = null
         accumulatedElevationGainMeters = 0.0
         hasBarometerSample = false
@@ -335,6 +337,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
             return
         }
 
+        createNotificationChannel()
         val notification = buildNotification(isStandby)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             ServiceCompat.startForeground(this, NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
@@ -344,13 +347,20 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private fun buildNotification(isStandby: Boolean = false): Notification {
+        val isSk = TelemetryPreferences(this).appLanguageCode.equals("sk", ignoreCase = true)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val title = if (isSk) "MotoGeek Telemetria aktívna" else "MotoGeek Telemetry Active"
+        val body = if (isStandby) {
+            if (isSk) "Pohotovosť: Auto-štart > 5 km/h" else "Standby: Auto-start > 5 km/h"
+        } else {
+            if (isSk) "Zaznamenáva sa živá telemetria..." else "Recording live telemetry..."
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MotoGeek Telemetry Active")
-            .setContentText(if (isStandby) "Standby: Auto-start > 5 km/h" else "Recording live telemetry...")
+            .setContentTitle(title)
+            .setContentText(body)
             .setSmallIcon(R.mipmap.ic_launcher) // Adjust icon as needed
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -358,9 +368,10 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private fun createNotificationChannel() {
+        val isSk = TelemetryPreferences(this).appLanguageCode.equals("sk", ignoreCase = true)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Telemetry Service",
+            if (isSk) "Telemetrická služba" else "Telemetry Service",
             NotificationManager.IMPORTANCE_LOW
         )
         val manager = getSystemService(NotificationManager::class.java)
@@ -425,7 +436,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         return true
     }
 
-    private fun updateElevationClimb(altitudeMeters: Double) {
+    private fun updateElevationClimb(altitudeMeters: Double, deadbandMeters: Double = 1.5) {
         if (!altitudeMeters.isFinite()) return
         val prevRef = lastReferenceAltitudeMeters
         if (prevRef == null || !prevRef.isFinite()) {
@@ -433,10 +444,10 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
             return
         }
         val delta = altitudeMeters - prevRef
-        if (delta.isFinite() && delta >= 1.5) {
+        if (delta.isFinite() && delta >= deadbandMeters) {
             accumulatedElevationGainMeters += delta
             lastReferenceAltitudeMeters = altitudeMeters
-        } else if (delta.isFinite() && delta <= -1.5) {
+        } else if (delta.isFinite() && delta <= -deadbandMeters) {
             lastReferenceAltitudeMeters = altitudeMeters
         }
     }
@@ -453,7 +464,11 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 }
             }
             if (!hasBarometerSample && location.hasAltitude() && location.altitude.isFinite()) {
-                updateElevationClimb(location.altitude)
+                val rawAlt = location.altitude
+                val currentSmoothed = smoothedGpsAltitudeMeters
+                val nextSmoothed = if (currentSmoothed == null) rawAlt else (0.8 * currentSmoothed + 0.2 * rawAlt)
+                smoothedGpsAltitudeMeters = nextSmoothed
+                updateElevationClimb(nextSmoothed, deadbandMeters = 6.0)
             }
         }
 
@@ -469,7 +484,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
 
         if (_state.value.isRiding && isValidFix) {
-            val resolvedAlt = smoothedBaroAltitudeMeters ?: (if (location.hasAltitude() && location.altitude.isFinite()) location.altitude else 0.0)
+            val resolvedAlt = smoothedBaroAltitudeMeters ?: smoothedGpsAltitudeMeters ?: (if (location.hasAltitude() && location.altitude.isFinite()) location.altitude else 0.0)
             val tp = TelemetryTrackPointEntity(
                 rideId = activeRideId,
                 timestampMs = System.currentTimeMillis(),
@@ -522,7 +537,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                         val nextSmoothed = if (currentSmoothed == null) rawAlt else (0.85 * currentSmoothed + 0.15 * rawAlt)
                         smoothedBaroAltitudeMeters = nextSmoothed
                         if (_state.value.isRiding) {
-                            updateElevationClimb(nextSmoothed)
+                            updateElevationClimb(nextSmoothed, deadbandMeters = 1.5)
                         }
                     }
                 }
@@ -579,6 +594,9 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 lateralG = fusionEngine.currentLateralG,
                 leftCorners = fusionEngine.leftCorners,
                 rightCorners = fusionEngine.rightCorners,
+                currentRollRateDegPerSec = fusionEngine.currentRollRateDegPerSec,
+                peakRollRateDegPerSec = fusionEngine.peakRollRateDegPerSec,
+                lastCornerScore = fusionEngine.lastCornerScore,
                 calibrationStatus = if (manualLeanOffsetDeg != 0.0) "MANUAL 0° LOCKED" else if (fusionEngine.calibrator.isCalibrated) "LOCKED" else "CALIBRATING POCKET MODE",
                 distanceKm = accumulatedDistanceKm,
                 durationSeconds = durationSec,
@@ -686,7 +704,15 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         maxAccelG = 0.0
         maxBrakingG = 0.0
         maxLateralG = 0.0
-        _state.update { it.copy(peakLeanLeftDeg = 0.0, peakLeanRightDeg = 0.0) }
+        _state.update {
+            it.copy(
+                peakLeanLeftDeg = 0.0,
+                peakLeanRightDeg = 0.0,
+                peakRollRateDegPerSec = 0.0,
+                currentRollRateDegPerSec = 0.0,
+                lastCornerScore = 0.0
+            )
+        }
         if (!_state.value.isRiding && !isMonitoringStandby) {
             stopSelf()
         }
@@ -765,11 +791,17 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 repository.addAccumulatedTrackedKm(motorcycleId, accumulatedDistanceKm)
             }
 
+            val isSk = TelemetryPreferences(this@TelemetryForegroundService).appLanguageCode.equals("sk", ignoreCase = true)
+            val distFormatted = String.format("%.1f", accumulatedDistanceKm)
             repository.logActivity(
                 motorcycleId = motorcycleId,
                 category = "RIDE",
-                title = "Ride Recorded (${String.format("%.1f", accumulatedDistanceKm)} km)",
-                details = "Peak Lean: ${maxLeanLeft.toInt()}°L / ${maxLeanRight.toInt()}°R • ${fusionEngine.totalCorners} corners • Style: $badge"
+                title = if (isSk) "Jazda zaznamenaná ($distFormatted km)" else "Ride Recorded ($distFormatted km)",
+                details = if (isSk) {
+                    "Max náklon: ${maxLeanLeft.toInt()}°Ľ / ${maxLeanRight.toInt()}°P • ${fusionEngine.totalCorners} zákrut • Štýl: $badge"
+                } else {
+                    "Peak Lean: ${maxLeanLeft.toInt()}°L / ${maxLeanRight.toInt()}°R • ${fusionEngine.totalCorners} corners • Style: $badge"
+                }
             )
 
             _state.update { it.copy(isRiding = false) }
@@ -785,7 +817,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
 
     companion object {
         fun resetPeaks() {
-            _state.update { it.copy(peakLeanLeftDeg = 0.0, peakLeanRightDeg = 0.0) }
+            _state.update { it.copy(peakLeanLeftDeg = 0.0, peakLeanRightDeg = 0.0, peakRollRateDegPerSec = 0.0) }
         }
 
         const val ACTION_RESET_PEAKS = "ACTION_RESET_PEAKS"

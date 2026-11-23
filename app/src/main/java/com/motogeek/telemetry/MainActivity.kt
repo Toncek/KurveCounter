@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
@@ -185,11 +185,11 @@ class MainActivity : ComponentActivity() {
                                         navigationIcon = {
                                             if (currentRoute == "cockpit") {
                                                 IconButton(onClick = { navController.navigate("home") { popUpTo("home") { inclusive = false } } }) {
-                                                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Back", "Späť"), tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
                                                 }
                                             } else {
                                                 IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                                    Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
+                                                    Icon(Icons.Filled.Menu, contentDescription = tr("Menu", "Menu"), tint = com.motogeek.telemetry.ui.theme.RacingAmberPrimary)
                                                 }
                                             }
                                         },
@@ -359,7 +359,9 @@ class MainActivity : ComponentActivity() {
                 val intent = Intent(this, TelemetryForegroundService::class.java).apply {
                     action = TelemetryForegroundService.ACTION_START_MONITORING
                 }
-                ContextCompat.startForegroundService(this, intent)
+                try {
+                    ContextCompat.startForegroundService(this, intent)
+                } catch (_: Exception) {}
             }
         }
     }
@@ -376,13 +378,17 @@ class MainActivity : ComponentActivity() {
             action = TelemetryForegroundService.ACTION_START_RIDE
             putExtra(TelemetryForegroundService.EXTRA_MOTORCYCLE_ID, bikeId ?: "default_bike")
         }
-        ContextCompat.startForegroundService(this, intent)
+        try {
+            ContextCompat.startForegroundService(this, intent)
+        } catch (_: Exception) {}
     }
 
     private fun stopRideService() {
         val intent = Intent(this, TelemetryForegroundService::class.java).apply {
             action = TelemetryForegroundService.ACTION_STOP_RIDE
         }
-        startService(intent)
+        try {
+            startService(intent)
+        } catch (_: Exception) {}
     }
 }

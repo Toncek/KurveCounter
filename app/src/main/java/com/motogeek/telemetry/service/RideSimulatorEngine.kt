@@ -45,15 +45,26 @@ class RideSimulatorEngine {
             val speedDerivative = -sin(trackPhase * 3) * 50.0 * 3
             val longitudinalG = (speedDerivative / 50.0).coerceIn(-1.2, 0.8)
 
+            // Roll rate (deg/s): derivative of leanTarget wrt time
+            val rollRateDegPerSec = cos(trackPhase * 3) * 50.0 * 3.0 * (2.0 * PI / 60.0)
+
             accumulatedDistance += (speed / 3.6) * dt / 1000.0 // km
 
             _simState.update { current ->
                 val newMaxLeft = if (leanAngle < 0) maxOf(current.peakLeanLeftDeg, kotlin.math.abs(leanAngle)) else current.peakLeanLeftDeg
                 val newMaxRight = if (leanAngle > 0) maxOf(current.peakLeanRightDeg, leanAngle) else current.peakLeanRightDeg
+                val newPeakRollRate = maxOf(current.peakRollRateDegPerSec, kotlin.math.abs(rollRateDegPerSec))
 
                 // Simplified corner counting logic for demo
-                val leftCorners = current.leftCorners + if (leanAngle < -40 && current.leanAngleDeg >= -40) 1 else 0
-                val rightCorners = current.rightCorners + if (leanAngle > 40 && current.leanAngleDeg <= 40) 1 else 0
+                val triggeredLeft = leanAngle < -40 && current.leanAngleDeg >= -40
+                val triggeredRight = leanAngle > 40 && current.leanAngleDeg <= 40
+                val leftCorners = current.leftCorners + if (triggeredLeft) 1 else 0
+                val rightCorners = current.rightCorners + if (triggeredRight) 1 else 0
+                val cornerScore = if (triggeredLeft || triggeredRight) {
+                    kotlin.math.min(100.0, kotlin.math.max(0.0, (kotlin.math.abs(leanAngle) / 50.0) * 100.0))
+                } else {
+                    current.lastCornerScore
+                }
 
                 current.copy(
                     leanAngleDeg = leanAngle,
@@ -66,6 +77,9 @@ class RideSimulatorEngine {
                     peakLeanRightDeg = newMaxRight,
                     leftCorners = leftCorners,
                     rightCorners = rightCorners,
+                    currentRollRateDegPerSec = rollRateDegPerSec,
+                    peakRollRateDegPerSec = newPeakRollRate,
+                    lastCornerScore = cornerScore,
                     calibrationStatus = "SIMULATOR",
                     isRiding = true
                 )

@@ -1,16 +1,22 @@
 package com.motogeek.telemetry.ui
 
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.view.WindowManager
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,10 +35,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.Intent
 import com.motogeek.telemetry.service.LiveTelemetryState
 import com.motogeek.telemetry.service.TelemetryForegroundService
 import com.motogeek.telemetry.service.TelemetryPreferences
+import com.motogeek.telemetry.ui.theme.WarningGold
+import com.motogeek.telemetry.ui.theme.tr
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -73,6 +80,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
     val context = LocalContext.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val isRidingOrDemo = telemetryState.isRiding || isDemoMode
+    var currentLayoutMode by remember { mutableStateOf(CockpitLayoutMode.APEX_R) }
 
     DisposableEffect(isRidingOrDemo) {
         val window = (context as? Activity)?.window
@@ -87,112 +95,284 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
     }
 
     if (isLandscape) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            // Left: Lean Gauge
-            Box(modifier = Modifier.size(200.dp), contentAlignment = Alignment.Center) {
-                LeanAngleGauge(leanAngle = animatedLeanAngle.toDouble(), peakLeft = telemetryState.peakLeanLeftDeg, peakRight = telemetryState.peakLeanRightDeg)
-                TextButton(onClick = { viewModel.resetPeaks() }, modifier = Modifier.align(Alignment.BottomCenter).offset(y = 20.dp)) {
-                    Text("Reset Peaks", fontSize = 10.sp)
-                }
-            }
-
-            // Center: Speed & Corner Counter
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "${animatedSpeed.toInt()}",
-                    fontSize = 64.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum")
-                )
-                Text(text = "km/h", fontSize = 16.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                MetricCard("Corners", "${telemetryState.leftCorners}L | ${telemetryState.rightCorners}R")
-            }
-
-            // Right: GG-Diagram + Controls
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(modifier = Modifier.size(150.dp)) {
-                    GForceGauge(longitudinalG = animatedLongitudinalG.toDouble(), lateralG = animatedLateralG.toDouble())
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                if (isRidingOrDemo) {
-                    if (!isDemoMode && !telemetryState.isPaused) {
-                        Button(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.pauseRide()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
-                            modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
-                        ) {
-                            Text("PAUSE RIDE", color = Color.Black)
+            // Compact top bar: Layout mode chips, Auto-Start / Boot chips (when not riding), calibration badge
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CockpitLayoutMode.entries.forEach { mode ->
+                    val isSelected = currentLayoutMode == mode
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            currentLayoutMode = mode
+                        },
+                        label = {
+                            Text(
+                                text = mode.name.replace("_", "-"),
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    } else if (!isDemoMode && telemetryState.isPaused) {
-                        Button(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.resumeRide()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
-                            modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
-                        ) {
-                            Text("RESUME RIDE", color = Color.Black)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    Button(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (isDemoMode) viewModel.stopDemoMode() else onStopRide()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
-                    ) {
-                        Text(if (isDemoMode) "STOP DEMO" else "STOP RIDE")
-                    }
-                } else {
-                    Button(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onStartRide()
-                        },
-                        enabled = activeBike != null,
-                        modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
-                    ) {
-                        Text("START RIDE")
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val intent = Intent(context, TelemetryForegroundService::class.java).apply {
-                                action = TelemetryForegroundService.ACTION_CALIBRATE_ZERO
-                            }
-                            context.startService(intent)
-                        },
-                        modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
-                    ) {
-                        Text("CALIBRATE 0° (SET ZERO)")
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    ElevatedFilterChip(
-                        selected = false,
-                        onClick = { viewModel.startDemoMode() },
-                        label = { Text("Try Demo Ride", fontWeight = FontWeight.Bold) },
-                        colors = FilterChipDefaults.elevatedFilterChipColors(
-                            containerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
-                            labelColor = MaterialTheme.colorScheme.tertiary
-                        )
                     )
+                }
+
+                if (!isRidingOrDemo) {
+                    FilterChip(
+                        selected = telemetryState.autoStartAbove5Kmh,
+                        onClick = {
+                            val prefs = TelemetryPreferences(context)
+                            prefs.autoStartAbove5Kmh = !prefs.autoStartAbove5Kmh
+                            sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_SYNC_PREFS)
+                        },
+                        label = { Text(tr("Auto-Start > 5 km/h", "Auto-Štart > 5 km/h"), fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = telemetryState.startOnBoot,
+                        onClick = {
+                            val prefs = TelemetryPreferences(context)
+                            prefs.startOnBoot = !prefs.startOnBoot
+                            sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_SYNC_PREFS)
+                        },
+                        label = { Text(tr("Run on Boot", "Po štarte"), fontSize = 11.sp) }
+                    )
+                }
+
+                Badge(
+                    containerColor = if (telemetryState.calibrationStatus == "LOCKED") Color(0xFF00E676) else Color(0xFFFFEA00)
+                ) {
+                    Text(
+                        text = localizedCalibrationStatus(telemetryState.calibrationStatus),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        fontSize = 10.sp
+                    )
+                }
+
+                if (telemetryState.isRiding && telemetryState.currentSpeedKmh < 1.0 && !isDemoMode) {
+                    Badge(containerColor = MaterialTheme.colorScheme.tertiary) {
+                        Text(
+                            text = tr("AUTO-PAUSED", "AUTO-PAUZA"),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
+            if (activeBike == null && !isRidingOrDemo) {
+                Spacer(modifier = Modifier.height(6.dp))
+                NullActiveBikeWarningBanner()
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                when (currentLayoutMode) {
+                    CockpitLayoutMode.APEX_R -> {
+                        // Left: Lean Gauge
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(modifier = Modifier.size(190.dp), contentAlignment = Alignment.Center) {
+                                LeanAngleGauge(
+                                    leanAngle = animatedLeanAngle.toDouble(),
+                                    peakLeft = telemetryState.peakLeanLeftDeg,
+                                    peakRight = telemetryState.peakLeanRightDeg
+                                )
+                                TextButton(
+                                    onClick = { viewModel.resetPeaks() },
+                                    modifier = Modifier.align(Alignment.BottomCenter).offset(y = 18.dp)
+                                ) {
+                                    Text(tr("Reset Peaks", "Vynulovať maximá"), fontSize = 10.sp)
+                                }
+                            }
+                        }
+
+                        // Center: Speed & Corner Counter
+                        Column(
+                            modifier = Modifier.weight(0.9f),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "${animatedSpeed.toInt()}",
+                                fontSize = 60.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum")
+                            )
+                            Text(text = "km/h", fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            MetricCard(tr("Corners", "Zákruty"), "${telemetryState.leftCorners}L | ${telemetryState.rightCorners}R")
+                        }
+
+                        // Right: GG-Diagram + Controls
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState()),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(modifier = Modifier.size(120.dp)) {
+                                GForceGauge(
+                                    longitudinalG = animatedLongitudinalG.toDouble(),
+                                    lateralG = animatedLateralG.toDouble()
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LandscapeActionControls(
+                                isRidingOrDemo = isRidingOrDemo,
+                                isDemoMode = isDemoMode,
+                                isPaused = telemetryState.isPaused,
+                                hasActiveBike = activeBike != null,
+                                onPauseRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.pauseRide()
+                                },
+                                onResumeRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.resumeRide()
+                                },
+                                onStop = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (isDemoMode) viewModel.stopDemoMode() else onStopRide()
+                                },
+                                onStartRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onStartRide()
+                                },
+                                onCalibrateZero = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_CALIBRATE_ZERO)
+                                },
+                                onStartDemo = { viewModel.startDemoMode() }
+                            )
+                        }
+                    }
+
+                    CockpitLayoutMode.CIRCUIT -> {
+                        Box(
+                            modifier = Modifier
+                                .weight(1.8f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState()),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircuitLayout(
+                                telemetryState = telemetryState,
+                                animatedLongitudinalG = animatedLongitudinalG,
+                                animatedLateralG = animatedLateralG
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState()),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            LandscapeActionControls(
+                                isRidingOrDemo = isRidingOrDemo,
+                                isDemoMode = isDemoMode,
+                                isPaused = telemetryState.isPaused,
+                                hasActiveBike = activeBike != null,
+                                onPauseRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.pauseRide()
+                                },
+                                onResumeRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.resumeRide()
+                                },
+                                onStop = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (isDemoMode) viewModel.stopDemoMode() else onStopRide()
+                                },
+                                onStartRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onStartRide()
+                                },
+                                onCalibrateZero = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_CALIBRATE_ZERO)
+                                },
+                                onStartDemo = { viewModel.startDemoMode() }
+                            )
+                        }
+                    }
+
+                    CockpitLayoutMode.LAB -> {
+                        Box(
+                            modifier = Modifier
+                                .weight(1.8f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState()),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            LabLayout(telemetryState = telemetryState)
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState()),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            LandscapeActionControls(
+                                isRidingOrDemo = isRidingOrDemo,
+                                isDemoMode = isDemoMode,
+                                isPaused = telemetryState.isPaused,
+                                hasActiveBike = activeBike != null,
+                                onPauseRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.pauseRide()
+                                },
+                                onResumeRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.resumeRide()
+                                },
+                                onStop = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (isDemoMode) viewModel.stopDemoMode() else onStopRide()
+                                },
+                                onStartRide = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onStartRide()
+                                },
+                                onCalibrateZero = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_CALIBRATE_ZERO)
+                                },
+                                onStartDemo = { viewModel.startDemoMode() }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -205,15 +385,19 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Cockpit",
+                text = tr("Cockpit", "Kokpit"),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            if (activeBike == null && !isRidingOrDemo) {
+                NullActiveBikeWarningBanner()
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Layout Mode Segmented Bar
-            var currentLayoutMode by remember { mutableStateOf(CockpitLayoutMode.APEX_R) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -221,7 +405,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                     .background(Color.DarkGray.copy(alpha = 0.3f), shape = MaterialTheme.shapes.large),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                CockpitLayoutMode.values().forEach { mode ->
+                CockpitLayoutMode.entries.forEach { mode ->
                     val isSelected = currentLayoutMode == mode
                     TextButton(
                         onClick = {
@@ -245,7 +429,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                 ElevatedFilterChip(
                     selected = false,
                     onClick = { viewModel.startDemoMode() },
-                    label = { Text("Try Demo Ride (Simulator)", fontWeight = FontWeight.Bold) },
+                    label = { Text(tr("Try Demo Ride (Simulator)", "Skúsiť demo jazdu (Simulátor)"), fontWeight = FontWeight.Bold) },
                     colors = FilterChipDefaults.elevatedFilterChipColors(
                         containerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
                         labelColor = MaterialTheme.colorScheme.tertiary
@@ -258,24 +442,18 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                         onClick = {
                             val prefs = TelemetryPreferences(context)
                             prefs.autoStartAbove5Kmh = !prefs.autoStartAbove5Kmh
-                            val intent = Intent(context, TelemetryForegroundService::class.java).apply {
-                                action = TelemetryForegroundService.ACTION_SYNC_PREFS
-                            }
-                            context.startService(intent)
+                            sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_SYNC_PREFS)
                         },
-                        label = { Text("Auto-Start > 5 km/h") }
+                        label = { Text(tr("Auto-Start > 5 km/h", "Auto-Štart > 5 km/h")) }
                     )
                     FilterChip(
                         selected = telemetryState.startOnBoot,
                         onClick = {
                             val prefs = TelemetryPreferences(context)
                             prefs.startOnBoot = !prefs.startOnBoot
-                            val intent = Intent(context, TelemetryForegroundService::class.java).apply {
-                                action = TelemetryForegroundService.ACTION_SYNC_PREFS
-                            }
-                            context.startService(intent)
+                            sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_SYNC_PREFS)
                         },
-                        label = { Text("Run on Phone Boot") }
+                        label = { Text(tr("Run on Phone Boot", "Spustiť po štarte")) }
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -285,7 +463,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
             Badge(
                 containerColor = if (telemetryState.calibrationStatus == "LOCKED") Color(0xFF00E676) else Color(0xFFFFEA00)
             ) {
-                Text(telemetryState.calibrationStatus, modifier = Modifier.padding(4.dp))
+                Text(localizedCalibrationStatus(telemetryState.calibrationStatus), modifier = Modifier.padding(4.dp))
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -293,7 +471,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
             if (telemetryState.isRiding && telemetryState.currentSpeedKmh < 1.0 && !isDemoMode) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Badge(containerColor = MaterialTheme.colorScheme.tertiary) {
-                    Text("AUTO-PAUSED", modifier = Modifier.padding(4.dp), color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text(tr("AUTO-PAUSED", "AUTO-PAUZA"), modifier = Modifier.padding(4.dp), color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -331,7 +509,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
                             modifier = Modifier.weight(1f).heightIn(min = 68.dp)
                         ) {
-                            Text("PAUSE", color = Color.Black)
+                            Text(tr("PAUSE", "PAUZA"), color = Color.Black)
                         }
                     } else if (!isDemoMode && telemetryState.isPaused) {
                         Button(
@@ -342,7 +520,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
                             modifier = Modifier.weight(1f).heightIn(min = 68.dp)
                         ) {
-                            Text("RESUME", color = Color.Black)
+                            Text(tr("RESUME", "POKRAČOVAŤ"), color = Color.Black)
                         }
                     }
                     Button(
@@ -353,7 +531,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.weight(1f).heightIn(min = 68.dp)
                     ) {
-                        Text(if (isDemoMode) "STOP" else "STOP")
+                        Text(tr("STOP", "ZASTAVIŤ"))
                     }
                 }
             } else {
@@ -365,24 +543,140 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                     enabled = activeBike != null,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp)
                 ) {
-                    Text("START RIDE")
+                    Text(tr("START RIDE", "SPUSTIŤ JAZDU"))
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        val intent = Intent(context, TelemetryForegroundService::class.java).apply {
-                            action = TelemetryForegroundService.ACTION_CALIBRATE_ZERO
-                        }
-                        context.startService(intent)
+                        sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_CALIBRATE_ZERO)
                     },
                     modifier = Modifier.heightIn(min = 68.dp).fillMaxWidth()
                 ) {
-                    Text("CALIBRATE 0° (SET ZERO)")
+                    Text(tr("CALIBRATE 0° (SET ZERO)", "KALIBROVAŤ 0° (NULA)"))
                 }
             }
             Spacer(modifier = Modifier.height(80.dp)) // padding for bottom nav
         }
+    }
+}
+
+private fun sendTelemetryServiceAction(context: Context, action: String) {
+    val intent = Intent(context, TelemetryForegroundService::class.java).apply {
+        this.action = action
+    }
+    try {
+        context.startService(intent)
+    } catch (_: Exception) {}
+}
+
+@Composable
+private fun localizedCalibrationStatus(status: String): String = when (status) {
+    "LOCKED" -> tr("LOCKED", "UZAMKNUTÉ")
+    "MANUAL 0° LOCKED" -> tr("MANUAL 0° LOCKED", "MANUÁLNE 0° UZAMKNUTÉ")
+    "CALIBRATING POCKET MODE" -> tr("CALIBRATING POCKET MODE", "KALIBRÁCIA REŽIMU VRECKA")
+    "SIMULATOR" -> tr("SIMULATOR", "SIMULÁTOR")
+    else -> status
+}
+
+@Composable
+private fun NullActiveBikeWarningBanner(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = WarningGold.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, WarningGold.copy(alpha = 0.7f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = WarningGold,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = tr(
+                    "No active motorcycle selected. Select or add a bike in Garage to start a ride.",
+                    "Nie je vybraný žiadny motocykel. Vyberte alebo pridajte motorku v Garáži pre spustenie jazdy."
+                ),
+                color = WarningGold,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun LandscapeActionControls(
+    isRidingOrDemo: Boolean,
+    isDemoMode: Boolean,
+    isPaused: Boolean,
+    hasActiveBike: Boolean,
+    onPauseRide: () -> Unit,
+    onResumeRide: () -> Unit,
+    onStop: () -> Unit,
+    onStartRide: () -> Unit,
+    onCalibrateZero: () -> Unit,
+    onStartDemo: () -> Unit
+) {
+    if (isRidingOrDemo) {
+        if (!isDemoMode && !isPaused) {
+            Button(
+                onClick = onPauseRide,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                modifier = Modifier.heightIn(min = 52.dp).fillMaxWidth()
+            ) {
+                Text(tr("PAUSE RIDE", "POZASTAVIŤ JAZDU"), color = Color.Black)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+        } else if (!isDemoMode && isPaused) {
+            Button(
+                onClick = onResumeRide,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                modifier = Modifier.heightIn(min = 52.dp).fillMaxWidth()
+            ) {
+                Text(tr("RESUME RIDE", "POKRAČOVAŤ V JAZDE"), color = Color.Black)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        Button(
+            onClick = onStop,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.heightIn(min = 52.dp).fillMaxWidth()
+        ) {
+            Text(if (isDemoMode) tr("STOP DEMO", "ZASTAVIŤ DEMO") else tr("STOP RIDE", "UKONČIŤ JAZDU"))
+        }
+    } else {
+        Button(
+            onClick = onStartRide,
+            enabled = hasActiveBike,
+            modifier = Modifier.heightIn(min = 52.dp).fillMaxWidth()
+        ) {
+            Text(tr("START RIDE", "SPUSTIŤ JAZDU"))
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        OutlinedButton(
+            onClick = onCalibrateZero,
+            modifier = Modifier.heightIn(min = 52.dp).fillMaxWidth()
+        ) {
+            Text(tr("CALIBRATE 0° (SET ZERO)", "KALIBROVAŤ 0° (NULA)"))
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        ElevatedFilterChip(
+            selected = false,
+            onClick = onStartDemo,
+            label = { Text(tr("Try Demo Ride", "Skúsiť demo jazdu"), fontWeight = FontWeight.Bold) },
+            colors = FilterChipDefaults.elevatedFilterChipColors(
+                containerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
+                labelColor = MaterialTheme.colorScheme.tertiary
+            )
+        )
     }
 }
 
@@ -569,7 +863,7 @@ fun ApexRLayout(
         Box(modifier = Modifier.size(300.dp), contentAlignment = Alignment.Center) {
             LeanAngleGauge(leanAngle = animatedLeanAngle.toDouble(), peakLeft = telemetryState.peakLeanLeftDeg, peakRight = telemetryState.peakLeanRightDeg)
             TextButton(onClick = onResetPeaks, modifier = Modifier.align(Alignment.BottomCenter).offset(y = 40.dp)) {
-                Text("Reset Peaks", fontSize = 12.sp)
+                Text(tr("Reset Peaks", "Vynulovať maximá"), fontSize = 12.sp)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
@@ -589,8 +883,8 @@ fun ApexRLayout(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            MetricCard("Avg Speed", "${telemetryState.averageSpeedKmh.toInt()} km/h")
-            MetricCard("Corners", "${telemetryState.leftCorners}L | ${telemetryState.rightCorners}R")
+            MetricCard(tr("Avg Speed", "Priem. rýchlosť"), "${telemetryState.averageSpeedKmh.toInt()} km/h")
+            MetricCard(tr("Corners", "Zákruty"), "${telemetryState.leftCorners}L | ${telemetryState.rightCorners}R")
         }
     }
 }
@@ -617,9 +911,12 @@ fun CircuitLayout(
                 modifier = Modifier.padding(start = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                MetricCard("Timer", formatDuration(telemetryState.durationSeconds))
-                MetricCard("Turn-In °/s", "N/A") // Simplified as requested
-                MetricCard("Corner Score", "N/A") // Simplified as requested
+                MetricCard(tr("Timer", "Časovač"), formatDuration(telemetryState.durationSeconds))
+                MetricCard(tr("Turn-In °/s", "Nájazd °/s"), "${telemetryState.peakRollRateDegPerSec.toInt()} °/s")
+                MetricCard(
+                    tr("Corner Score", "Skóre zákruty"),
+                    if (telemetryState.lastCornerScore > 0) "${telemetryState.lastCornerScore.toInt()} / 100" else "—"
+                )
             }
         }
     }
@@ -656,9 +953,9 @@ fun LabLayout(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        SparklineChart(title = "Lean Angle (°)", data = leanHistory, color = Color(0xFF00E5FF), yRange = -60f..60f)
-        SparklineChart(title = "Longitudinal G", data = longGHistory, color = Color(0xFFFF2A54), yRange = -1.5f..1.5f)
-        SparklineChart(title = "Lateral G", data = latGHistory, color = Color(0xFFFFEA00), yRange = -1.5f..1.5f)
+        SparklineChart(title = tr("Lean Angle (°)", "Uhol náklonu (°)"), data = leanHistory, color = Color(0xFF00E5FF), yRange = -60f..60f)
+        SparklineChart(title = tr("Longitudinal G", "Pozdĺžne preťaženie G"), data = longGHistory, color = Color(0xFFFF2A54), yRange = -1.5f..1.5f)
+        SparklineChart(title = tr("Lateral G", "Bočné preťaženie G"), data = latGHistory, color = Color(0xFFFFEA00), yRange = -1.5f..1.5f)
     }
 }
 

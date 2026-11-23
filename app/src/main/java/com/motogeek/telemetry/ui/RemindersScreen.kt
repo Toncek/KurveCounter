@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +27,7 @@ import com.motogeek.telemetry.domain.maintenance.TaskStatus
 import com.motogeek.telemetry.domain.toSafeDouble
 import com.motogeek.telemetry.ui.theme.*
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,8 +45,11 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val appLang = LocalAppLang.current
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingReminder by remember { mutableStateOf<ReminderEntity?>(null) }
+    var pendingDeleteReminder by remember { mutableStateOf<ReminderEntity?>(null) }
 
     // Evaluated automatic alerts
     val evaluatedTasks = remember(activeBike, allTasks, serviceLogs) {
@@ -63,7 +68,7 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Reminders & Alerts",
+                        text = tr("Reminders & Alerts", "Pripomienky & upozornenia"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -75,12 +80,19 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
                             navController.navigate("home")
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = RacingAmberPrimary)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = tr("Back", "Späť"),
+                            tint = RacingAmberPrimary
+                        )
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showAddDialog = true }) {
-                        Text("+ ADD REMINDER", color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = {
+                        editingReminder = null
+                        showAddDialog = true
+                    }) {
+                        Text(tr("+ ADD REMINDER", "+ PRIDAŤ PRIPOMIENKU"), color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -96,7 +108,7 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
         ) {
             if (activeBike == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No active motorcycle selected.", color = Color.Gray)
+                    Text(tr("No active motorcycle selected.", "Nie je vybraný žiadny aktívny motocykel."), color = Color.Gray)
                 }
                 return@Scaffold
             }
@@ -110,7 +122,10 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
                 // Section 1: Automatic Maintenance Alerts
                 item {
                     Text(
-                        text = "AUTOMATIC MAINTENANCE ALERTS (${autoAlerts.size})",
+                        text = tr(
+                            "AUTOMATIC MAINTENANCE ALERTS (${autoAlerts.size})",
+                            "AUTOMATICKÉ SERVISNÉ UPOZORNENIA (${autoAlerts.size})"
+                        ),
                         color = Color(0xFF6B7A99),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -134,7 +149,14 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
                             ) {
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ApexEmeraldGreen, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Text("All service schedule intervals are currently within limits.", color = Color.White, fontSize = 13.sp)
+                                Text(
+                                    tr(
+                                        "All service schedule intervals are currently within limits.",
+                                        "Všetky servisné intervaly sú momentálne v norme."
+                                    ),
+                                    color = Color.White,
+                                    fontSize = 13.sp
+                                )
                             }
                         }
                     }
@@ -152,7 +174,7 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
                 // Section 2: Custom User Reminders
                 item {
                     Text(
-                        text = "CUSTOM REMINDERS (${reminders.size})",
+                        text = tr("CUSTOM REMINDERS (${reminders.size})", "VLASTNÉ PRIPOMIENKY (${reminders.size})"),
                         color = Color(0xFF6B7A99),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -171,7 +193,10 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
                             border = BorderStroke(1.dp, TitaniumBorder)
                         ) {
                             Text(
-                                text = "No custom reminders set. Tap '+ ADD REMINDER' to create alerts for tire swaps, insurance, chain lube, etc.",
+                                text = tr(
+                                    "No custom reminders set. Tap '+ ADD REMINDER' to create alerts for tire swaps, insurance, chain lube, etc.",
+                                    "Zatiaľ nemáte vlastné pripomienky. Klepnite na '+ PRIDAŤ PRIPOMIENKU' pre upozornenia na výmenu pneu, STK, mazanie reťaze a pod."
+                                ),
                                 color = Color.Gray,
                                 fontSize = 13.sp,
                                 modifier = Modifier.padding(14.dp)
@@ -182,12 +207,15 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
                     items(reminders, key = { it.reminderId }) { reminder ->
                         CustomReminderCard(
                             reminder = reminder,
+                            onEdit = {
+                                editingReminder = reminder
+                                showAddDialog = true
+                            },
                             onToggleComplete = { isChecked ->
                                 viewModel.updateReminder(reminder.copy(isCompleted = isChecked))
                             },
                             onDelete = {
-                                viewModel.deleteReminder(reminder.reminderId)
-                                scope.launch { snackbarHostState.showSnackbar("Reminder deleted") }
+                                pendingDeleteReminder = reminder
                             }
                         )
                     }
@@ -199,11 +227,60 @@ fun RemindersScreen(viewModel: MainViewModel, navController: NavController) {
     if (showAddDialog && activeBike != null) {
         AddCustomReminderDialog(
             activeBike = activeBike!!,
-            onDismiss = { showAddDialog = false },
-            onSave = { entity ->
-                viewModel.addReminder(entity)
+            existing = editingReminder,
+            onDismiss = {
                 showAddDialog = false
-                scope.launch { snackbarHostState.showSnackbar("Reminder added") }
+                editingReminder = null
+            },
+            onSave = { entity ->
+                if (editingReminder != null) {
+                    viewModel.updateReminder(entity)
+                    scope.launch { snackbarHostState.showSnackbar(appLang.pick("Reminder updated", "Pripomienka aktualizovaná")) }
+                } else {
+                    viewModel.addReminder(entity)
+                    scope.launch { snackbarHostState.showSnackbar(appLang.pick("Reminder added", "Pripomienka pridaná")) }
+                }
+                showAddDialog = false
+                editingReminder = null
+            }
+        )
+    }
+
+    pendingDeleteReminder?.let { reminderToDelete ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteReminder = null },
+            containerColor = TftSurfaceDark,
+            title = {
+                Text(
+                    text = tr("Delete Reminder", "Vymazať pripomienku"),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = tr(
+                        "Are you sure you want to delete \"${reminderToDelete.title}\"? This cannot be undone.",
+                        "Naozaj chcete vymazať pripomienku \"${reminderToDelete.title}\"? Túto akciu nemožno vrátiť späť."
+                    ),
+                    color = Color.LightGray
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteReminder(reminderToDelete.reminderId)
+                    pendingDeleteReminder = null
+                    scope.launch {
+                        snackbarHostState.showSnackbar(appLang.pick("Reminder deleted", "Pripomienka vymazaná"))
+                    }
+                }) {
+                    Text(tr("Delete", "Vymazať"), color = RedlineCrimson, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteReminder = null }) {
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
+                }
             }
         )
     }
@@ -238,7 +315,7 @@ private fun AutoAlertCard(
                         border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.5f))
                     ) {
                         Text(
-                            text = if (isOverdue) "OVERDUE" else "DUE SOON",
+                            text = if (isOverdue) tr("OVERDUE", "PO TERMÍNE") else tr("DUE SOON", "ČOSKORO"),
                             color = badgeColor,
                             fontWeight = FontWeight.Bold,
                             fontSize = 9.sp,
@@ -255,9 +332,9 @@ private fun AutoAlertCard(
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
-                val remainingKm = alert.remainingKm?.let { "${it.toInt()} km remaining" } ?: ""
-                val remainingDays = alert.remainingDays?.let { " • $it days" } ?: ""
-                val dueAt = alert.nextDueOdometerKm?.let { " (Due at ${it.toInt()} km)" } ?: ""
+                val remainingKm = alert.remainingKm?.let { tr("${it.toInt()} km remaining", "zostáva ${it.toInt()} km") } ?: ""
+                val remainingDays = alert.remainingDays?.let { tr(" • $it days", " • $it dní") } ?: ""
+                val dueAt = alert.nextDueOdometerKm?.let { tr(" (Due at ${it.toInt()} km)", " (Termín pri ${it.toInt()} km)") } ?: ""
                 Text(
                     text = "$remainingKm$remainingDays$dueAt",
                     color = Color.LightGray,
@@ -272,7 +349,7 @@ private fun AutoAlertCard(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 modifier = Modifier.height(32.dp)
             ) {
-                Text("Service", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(tr("Service", "Servis"), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -281,11 +358,14 @@ private fun AutoAlertCard(
 @Composable
 private fun CustomReminderCard(
     reminder: ReminderEntity,
+    onEdit: () -> Unit,
     onToggleComplete: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onEdit),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = TftSurfaceDark),
         border = BorderStroke(1.dp, TitaniumBorder)
@@ -319,8 +399,8 @@ private fun CustomReminderCard(
                         textDecoration = if (reminder.isCompleted) TextDecoration.LineThrough else null
                     )
                     val targetParts = mutableListOf<String>()
-                    reminder.targetOdometerKm?.let { targetParts.add("Target: ${it.toInt()} km") }
-                    reminder.targetDateIso?.takeIf { it.isNotBlank() }?.let { targetParts.add("Date: $it") }
+                    reminder.targetOdometerKm?.let { targetParts.add(tr("Target: ${it.toInt()} km", "Cieľ: ${it.toInt()} km")) }
+                    reminder.targetDateIso?.takeIf { it.isNotBlank() }?.let { targetParts.add(tr("Date: $it", "Dátum: $it")) }
 
                     if (targetParts.isNotEmpty()) {
                         Text(
@@ -333,7 +413,7 @@ private fun CustomReminderCard(
             }
 
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = RedlineCrimson.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Delete, contentDescription = tr("Delete", "Vymazať"), tint = RedlineCrimson.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -342,26 +422,54 @@ private fun CustomReminderCard(
 @Composable
 private fun AddCustomReminderDialog(
     activeBike: com.motogeek.telemetry.data.local.MotorcycleEntity,
+    existing: ReminderEntity? = null,
     onDismiss: () -> Unit,
     onSave: (ReminderEntity) -> Unit
 ) {
-    var title by remember { mutableStateOf("") }
-    var targetOdoText by remember { mutableStateOf("") }
-    var targetDateIso by remember { mutableStateOf("") }
+    var title by remember(existing?.reminderId) { mutableStateOf(existing?.title ?: "") }
+    var targetOdoText by remember(existing?.reminderId) {
+        mutableStateOf(existing?.targetOdometerKm?.toInt()?.toString() ?: "")
+    }
+    var targetDateIso by remember(existing?.reminderId) { mutableStateOf(existing?.targetDateIso ?: "") }
+    var showTitleError by remember { mutableStateOf(false) }
+
+    val today = remember { LocalDate.now() }
+    val datePresets = remember(today) {
+        listOf(
+            "+7d" to today.plusDays(7).toString(),
+            "+30d" to today.plusDays(30).toString(),
+            "+90d" to today.plusDays(90).toString(),
+            "+1y" to today.plusYears(1).toString()
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TftSurfaceDark,
-        title = { Text("Add Custom Reminder", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                text = if (existing != null) tr("Edit Custom Reminder", "Upraviť pripomienku") else tr("Add Custom Reminder", "Pridať vlastnú pripomienku"),
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column {
                 OutlinedTextField(
                     value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Reminder Title (e.g. Clean & Lube Chain)") },
+                    onValueChange = {
+                        title = it
+                        if (showTitleError && it.isNotBlank()) showTitleError = false
+                    },
+                    label = { Text(tr("Reminder Title (e.g. Clean & Lube Chain)", "Názov pripomienky (napr. Vyčistiť & namazať reťaz)")) },
+                    isError = showTitleError,
+                    supportingText = if (showTitleError) {
+                        { Text(tr("Title is required", "Názov je povinný"), color = RedlineCrimson, fontSize = 11.sp) }
+                    } else null,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
+                        errorBorderColor = RedlineCrimson,
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White
                     ),
@@ -371,7 +479,7 @@ private fun AddCustomReminderDialog(
                 OutlinedTextField(
                     value = targetOdoText,
                     onValueChange = { targetOdoText = it },
-                    label = { Text("Target Odometer km (Optional)") },
+                    label = { Text(tr("Target Odometer km (Optional)", "Cieľový nájazd km (voliteľné)")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -384,7 +492,7 @@ private fun AddCustomReminderDialog(
                 OutlinedTextField(
                     value = targetDateIso,
                     onValueChange = { targetDateIso = it },
-                    label = { Text("Target Date YYYY-MM-DD (Optional)") },
+                    label = { Text(tr("Target Date YYYY-MM-DD (Optional)", "Cieľový dátum RRRR-MM-DD (voliteľné)")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -393,31 +501,54 @@ private fun AddCustomReminderDialog(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    datePresets.forEach { (chipKey, presetDate) ->
+                        val chipText = if (chipKey == "+1y") tr("+1y", "+1r") else chipKey
+                        FilterChip(
+                            selected = targetDateIso == presetDate,
+                            onClick = { targetDateIso = presetDate },
+                            label = { Text(chipText, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = RacingAmberPrimary.copy(alpha = 0.2f),
+                                selectedLabelColor = RacingAmberPrimary,
+                                labelColor = Color.LightGray
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    if (title.isNotBlank()) {
-                        val odo = targetOdoText.toSafeDouble(0.0).takeIf { it > 0 }
-                        onSave(
-                            ReminderEntity(
-                                motorcycleId = activeBike.id,
-                                title = title.trim(),
-                                targetOdometerKm = odo,
-                                targetDateIso = targetDateIso.takeIf { it.isNotBlank() },
-                                isCompleted = false
-                            )
-                        )
+                    if (title.isBlank()) {
+                        showTitleError = true
+                        return@Button
                     }
+                    val odo = targetOdoText.toSafeDouble(0.0).takeIf { it > 0 }
+                    onSave(
+                        ReminderEntity(
+                            reminderId = existing?.reminderId ?: 0L,
+                            motorcycleId = existing?.motorcycleId ?: activeBike.id,
+                            title = title.trim(),
+                            targetOdometerKm = odo,
+                            targetDateIso = targetDateIso.trim().takeIf { it.isNotBlank() },
+                            isCompleted = existing?.isCompleted ?: false
+                        )
+                    )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
-                Text("Save Reminder", fontWeight = FontWeight.Bold)
+                Text(tr("Save Reminder", "Uložiť pripomienku"), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+            TextButton(onClick = onDismiss) { Text(tr("Cancel", "Zrušiť"), color = Color.Gray) }
         }
     )
 }

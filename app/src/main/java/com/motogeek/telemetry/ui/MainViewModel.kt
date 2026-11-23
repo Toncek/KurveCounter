@@ -860,7 +860,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.clearActiveMotorcycles()
             repository.insertMotorcycle(newBike)
+            val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+            val defaultTasks = MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(null, _appLanguage.value.code)
+            repository.insertMaintenanceTasks(toMaintenanceTaskEntities(defaultTasks, id, json))
             repository.logActivity(id, "SYSTEM", "Motorcycle Created", "Added ${newBike.displayName}")
+        }
+    }
+
+    private fun toMaintenanceTaskEntities(
+        tasks: List<MaintenanceTaskDto>,
+        motorcycleId: String,
+        json: Json
+    ): List<MaintenanceTaskEntity> {
+        return tasks.map { task ->
+            MaintenanceTaskEntity(
+                taskId = task.taskId,
+                motorcycleId = motorcycleId,
+                category = task.category,
+                taskName = task.taskName,
+                actionType = task.actionType,
+                firstBreakInAtKm = task.firstBreakInAtKm,
+                intervalKm = task.intervalKm,
+                intervalMonths = task.intervalMonths,
+                warningThresholdKm = task.warningThresholdKm,
+                warningThresholdDays = task.warningThresholdDays,
+                oemPartNumbersJson = json.encodeToString(task.oemPartNumbers),
+                notes = task.notes
+            )
         }
     }
 
@@ -1073,22 +1099,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
 
-            val taskEntities = template.maintenanceSchedule.map { task ->
-                MaintenanceTaskEntity(
-                    taskId = task.taskId,
-                    motorcycleId = targetBikeId,
-                    category = task.category,
-                    taskName = task.taskName,
-                    actionType = task.actionType,
-                    firstBreakInAtKm = task.firstBreakInAtKm,
-                    intervalKm = task.intervalKm,
-                    intervalMonths = task.intervalMonths,
-                    warningThresholdKm = task.warningThresholdKm,
-                    warningThresholdDays = task.warningThresholdDays,
-                    oemPartNumbersJson = json.encodeToString(task.oemPartNumbers),
-                    notes = task.notes
-                )
-            }
+            val standardTasks = MotorcycleTemplateCatalog.buildStandardMaintenanceTasks(
+                template.technicalSpecs,
+                _appLanguage.value.code
+            )
+            val taskEntities = toMaintenanceTaskEntities(standardTasks, targetBikeId, json)
             repository.insertMaintenanceTasks(taskEntities)
             repository.deduplicateMaintenanceTasksForBike(targetBikeId)
         }
@@ -1130,21 +1145,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val intent = android.content.Intent(getApplication(), TelemetryForegroundService::class.java).apply {
             action = TelemetryForegroundService.ACTION_PAUSE_RIDE
         }
-        getApplication<Application>().startService(intent)
+        try {
+            getApplication<Application>().startService(intent)
+        } catch (_: Exception) {}
     }
 
     fun resumeRide() {
         val intent = android.content.Intent(getApplication(), TelemetryForegroundService::class.java).apply {
             action = TelemetryForegroundService.ACTION_RESUME_RIDE
         }
-        getApplication<Application>().startService(intent)
+        try {
+            getApplication<Application>().startService(intent)
+        } catch (_: Exception) {}
     }
 
     fun resetPeaks() {
+        TelemetryForegroundService.resetPeaks()
         val intent = android.content.Intent(getApplication(), TelemetryForegroundService::class.java).apply {
             action = TelemetryForegroundService.ACTION_RESET_PEAKS
         }
-        getApplication<Application>().startService(intent)
+        try {
+            getApplication<Application>().startService(intent)
+        } catch (_: Exception) {}
     }
 
     fun deleteRideSession(rideId: Long) {
@@ -1173,7 +1195,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.category.contains(categoryKeyword, ignoreCase = true)
             }
 
-            val taskId = matchedTask?.taskId ?: UUID.randomUUID().toString()
+            val taskId = matchedTask?.taskId ?: when {
+                categoryKeyword.contains("oil", ignoreCase = true) -> "STD_ENGINE_OIL"
+                categoryKeyword.contains("chain", ignoreCase = true) -> "STD_CHAIN_LUBE"
+                categoryKeyword.contains("brake", ignoreCase = true) -> "STD_BRAKE_FLUID"
+                categoryKeyword.contains("tire", ignoreCase = true) -> "STD_TIRES_AXLES"
+                categoryKeyword.contains("cool", ignoreCase = true) -> "STD_COOLANT"
+                categoryKeyword.contains("valve", ignoreCase = true) -> "STD_VALVE_CLEARANCE"
+                categoryKeyword.contains("spark", ignoreCase = true) -> "STD_SPARK_PLUGS"
+                categoryKeyword.contains("air", ignoreCase = true) -> "STD_AIR_FILTER"
+                else -> "GENERAL_SERVICE"
+            }
             val logId = UUID.randomUUID().toString()
             val serviceLog = ServiceLogEntity(
                 logId = logId,

@@ -18,5 +18,8 @@ data class LiveTelemetryState(
     val distanceKm: Double = 0.0,
     val durationSeconds: Long = 0L,
     val autoStartAbove5Kmh: Boolean = true,
-    val startOnBoot: Boolean = false
+    val startOnBoot: Boolean = false,
+    val currentRollRateDegPerSec: Double = 0.0,
+    val peakRollRateDegPerSec: Double = 0.0,
+    val lastCornerScore: Double = 0.0
 )

@@ -18,6 +18,7 @@ import com.motogeek.telemetry.data.local.MotoGeekDatabase
 import com.motogeek.telemetry.data.local.MotoGeekRepository
 import com.motogeek.telemetry.domain.maintenance.MaintenanceEvaluator
 import com.motogeek.telemetry.domain.maintenance.TaskStatus
+import com.motogeek.telemetry.service.TelemetryPreferences
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -76,11 +77,13 @@ class MaintenanceCheckWorker(
             if (!granted) return
         }
 
+        val isSk = TelemetryPreferences(context).appLanguageCode.equals("sk", ignoreCase = true)
         val channelId = "maintenance_alerts"
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Maintenance Alerts", NotificationManager.IMPORTANCE_HIGH)
+            val channelName = if (isSk) "Upozornenia na údržbu" else "Maintenance Alerts"
+            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
             notificationManager.createNotificationChannel(channel)
         }
 
@@ -90,14 +93,22 @@ class MaintenanceCheckWorker(
         val pendingIntent: PendingIntent = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
         val text = buildString {
-            if (overdueCount > 0) append("$overdueCount task(s) OVERDUE. ")
-            if (dueSoonCount > 0) append("$dueSoonCount task(s) due soon. ")
-            if (dueRemindersCount > 0) append("$dueRemindersCount reminder(s) due.")
+            if (isSk) {
+                if (overdueCount > 0) append("$overdueCount úloh(y) PO TERMÍNE. ")
+                if (dueSoonCount > 0) append("$dueSoonCount úloh(y) čoskoro. ")
+                if (dueRemindersCount > 0) append("$dueRemindersCount pripomienok splatných.")
+            } else {
+                if (overdueCount > 0) append("$overdueCount task(s) OVERDUE. ")
+                if (dueSoonCount > 0) append("$dueSoonCount task(s) due soon. ")
+                if (dueRemindersCount > 0) append("$dueRemindersCount reminder(s) due.")
+            }
         }.trim()
+
+        val title = if (isSk) "Upozornenie na údržbu: $bikeName" else "Maintenance Alert: $bikeName"
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Maintenance Alert: $bikeName")
+            .setContentTitle(title)
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)

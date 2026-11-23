@@ -25,6 +25,8 @@ class MaintenanceEvaluator {
     companion object {
         private val SUPPORTED_FORMATTERS = listOf(
             DateTimeFormatter.ISO_LOCAL_DATE,
+            DateTimeFormatter.ofPattern("yyyy.MM.dd"),
+            DateTimeFormatter.ofPattern("yyyy/MM/dd"),
             DateTimeFormatter.ofPattern("dd/MM/yyyy"),
             DateTimeFormatter.ofPattern("dd.MM.yyyy"),
             DateTimeFormatter.ofPattern("MM/dd/yyyy")
@@ -70,7 +72,8 @@ class MaintenanceEvaluator {
             var remainingDays: Long? = null
 
             // Mileage based logic
-            if (lastLog == null && task.firstBreakInAtKm != null) {
+            val isEligibleForBreakIn = lastLog == null && task.firstBreakInAtKm != null
+            if (isEligibleForBreakIn) {
                 nextDueKm = task.firstBreakInAtKm
             } else if (task.intervalKm != null) {
                 val lastPerformedKm = lastLog?.odometerAtServiceKm ?: 0.0
@@ -107,11 +110,11 @@ class MaintenanceEvaluator {
 
             // Progress fraction for UI (0.0 = just serviced, 1.0 = due)
             var kmProgress = 0f
-            if (remainingKm != null && task.intervalKm != null && task.intervalKm > 0) {
-                val p = 1f - (remainingKm / task.intervalKm).toFloat()
-                if (p.isFinite()) kmProgress = max(0f, p)
-            } else if (remainingKm != null && task.firstBreakInAtKm != null && task.firstBreakInAtKm > 0 && lastLog == null) {
+            if (remainingKm != null && isEligibleForBreakIn && task.firstBreakInAtKm!! > 0) {
                 val p = 1f - (remainingKm / task.firstBreakInAtKm).toFloat()
+                if (p.isFinite()) kmProgress = max(0f, p)
+            } else if (remainingKm != null && task.intervalKm != null && task.intervalKm > 0) {
+                val p = 1f - (remainingKm / task.intervalKm).toFloat()
                 if (p.isFinite()) kmProgress = max(0f, p)
             }
 

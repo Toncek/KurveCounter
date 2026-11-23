@@ -39,11 +39,13 @@ abstract class MotoGeekDatabase : RoomDatabase() {
         }
 
 
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 try { db.execSQL("ALTER TABLE motorcycles ADD COLUMN name TEXT NOT NULL DEFAULT ''") } catch (_: Exception) {}
                 try { db.execSQL("ALTER TABLE service_logs ADD COLUMN notes TEXT NOT NULL DEFAULT ''") } catch (_: Exception) {}
                 try { db.execSQL("ALTER TABLE ride_sessions ADD COLUMN notes TEXT") } catch (_: Exception) {}
+                db.execSQL("CREATE TABLE IF NOT EXISTS app_logs (logId TEXT NOT NULL, motorcycleId TEXT NOT NULL, timestampEpochMs INTEGER NOT NULL, category TEXT NOT NULL, title TEXT NOT NULL, details TEXT NOT NULL, iconKey TEXT NOT NULL, PRIMARY KEY(logId), FOREIGN KEY(motorcycleId) REFERENCES motorcycles(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_app_logs_motorcycleId ON app_logs (motorcycleId)")
             }
         }
 

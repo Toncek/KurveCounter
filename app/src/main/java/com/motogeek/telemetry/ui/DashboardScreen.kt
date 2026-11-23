@@ -37,6 +37,7 @@ fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
     val fuelStats by viewModel.fuelEconomyStats.collectAsState()
     val riderAnalytics by viewModel.riderAnalytics.collectAsState()
     val rides by viewModel.currentRideSessions.collectAsState()
+    val appLang = LocalAppLang.current
 
     val dominantStyle = remember(rides) {
         if (rides.isEmpty()) "TOURER"
@@ -74,6 +75,16 @@ fun DashboardScreen(viewModel: MainViewModel, navController: NavController) {
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = tr("Back", "Späť"),
                             tint = RacingAmberPrimary
+                        )
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { viewModel.toggleAppLanguage() }) {
+                        Text(
+                            text = if (appLang == AppLang.EN) "EN ▸ SK" else "SK ▸ EN",
+                            color = TelemetryIceCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
                         )
                     }
                 },

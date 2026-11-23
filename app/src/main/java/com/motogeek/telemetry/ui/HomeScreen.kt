@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,7 +30,6 @@ import com.motogeek.telemetry.ui.theme.*
 fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
     val activeBike by viewModel.activeMotorcycle.collectAsState()
     val allBikes by viewModel.allMotorcycles.collectAsState()
-    val tasks by viewModel.currentServiceLogs.collectAsState()
     val allTasks by produceState(initialValue = emptyList<com.motogeek.telemetry.data.local.MaintenanceTaskEntity>(), activeBike) {
         activeBike?.let {
             viewModel.repository.getMaintenanceTasksForMotorcycleFlow(it.id).collect { t ->
@@ -62,8 +62,14 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
         else -> ApexEmeraldGreen
     }
     val healthText = when {
-        overdueCount > 0 -> tr("$overdueCount TASK(S) OVERDUE • SERVICE REQUIRED", "$overdueCount ÚKON(Y) PO TERMÍNE • VYŽADUJE SERVIS")
-        dueSoonCount > 0 -> tr("$dueSoonCount TASK(S) DUE SOON • HEALTH: $healthPercent%", "$dueSoonCount ÚKON(Y) ČOSKORO • STAV: $healthPercent%")
+        overdueCount > 0 -> tr(
+            "$overdueCount ${if (overdueCount == 1) "TASK" else "TASKS"} OVERDUE • SERVICE REQUIRED",
+            "$overdueCount ${skTaskCountNoun(overdueCount)} PO TERMÍNE • VYŽADUJE SERVIS"
+        )
+        dueSoonCount > 0 -> tr(
+            "$dueSoonCount ${if (dueSoonCount == 1) "TASK" else "TASKS"} DUE SOON • HEALTH: $healthPercent%",
+            "$dueSoonCount ${skTaskCountNoun(dueSoonCount)} ČOSKORO • STAV: $healthPercent%"
+        )
         else -> tr("SERVICE HEALTH: $healthPercent% • ALL SYSTEMS OK", "STAV SERVISU: $healthPercent% • VŠETKO OK")
     }
 
@@ -123,7 +129,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                 }
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "View Maintenance",
+                    contentDescription = tr("View Maintenance", "Zobraziť údržbu"),
                     tint = healthColor,
                     modifier = Modifier.size(16.dp)
                 )
@@ -138,21 +144,21 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             MiniKpiCard(
-                label = "AVG FUEL",
+                label = tr("AVG FUEL", "PRIEM. SPOTREBA"),
                 value = if (fuelStats.avgLitersPer100Km > 0) String.format("%.1f", fuelStats.avgLitersPer100Km) else "—",
-                unit = "L/100",
+                unit = tr("L/100", "l/100"),
                 valueColor = TelemetryIceCyan,
                 modifier = Modifier.weight(1f)
             )
             MiniKpiCard(
-                label = "PEAK LEAN",
+                label = tr("PEAK LEAN", "MAX. NÁKLON"),
                 value = "${maxLeanLeft.toInt()}°/${maxLeanRight.toInt()}°",
-                unit = "L/R",
+                unit = tr("L/R", "Ľ/P"),
                 valueColor = RacingAmberPrimary,
                 modifier = Modifier.weight(1f)
             )
             MiniKpiCard(
-                label = "COST / KM",
+                label = tr("COST / KM", "NÁKLADY / KM"),
                 value = if (tcoStats.costPerKm > 0) String.format("%.2f", tcoStats.costPerKm) else "—",
                 unit = "${tcoStats.currency}/KM",
                 valueColor = ApexEmeraldGreen,
@@ -199,7 +205,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                         border = BorderStroke(1.dp, if (telemetryState.isRiding) ApexEmeraldGreen else RacingAmberPrimary)
                     ) {
                         Text(
-                            text = if (telemetryState.isRiding) "100 HZ LIVE" else tr("STANDBY", "PRIPRAVENÉ"),
+                            text = if (telemetryState.isRiding) tr("100 HZ LIVE", "100 HZ NAŽIVO") else tr("STANDBY", "PRIPRAVENÉ"),
                             color = if (telemetryState.isRiding) ApexEmeraldGreen else RacingAmberPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
@@ -224,7 +230,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavController) {
                     ) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Launch Cockpit",
+                            contentDescription = tr("Launch Cockpit", "Spustiť kokpit"),
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
@@ -453,7 +459,7 @@ private fun BentoGridCard(
                     modifier = Modifier.size(22.dp)
                 )
                 Icon(
-                    imageVector = Icons.Default.ArrowForward,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
                     tint = Color.DarkGray,
                     modifier = Modifier.size(14.dp)
@@ -476,4 +482,10 @@ private fun BentoGridCard(
             }
         }
     }
+}
+
+private fun skTaskCountNoun(count: Int): String = when (count) {
+    1 -> "ÚKON"
+    in 2..4 -> "ÚKONY"
+    else -> "ÚKONOV"
 }

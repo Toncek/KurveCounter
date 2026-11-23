@@ -19,6 +19,12 @@ class MotorcycleSensorFusionEngine(
         private set
     var currentSpeedKmh = 0.0
         private set
+    var currentRollRateDegPerSec = 0.0
+        private set
+    var peakRollRateDegPerSec = 0.0
+        private set
+    var lastCornerScore = 0.0
+        private set
 
     private var lastFilteredAx = 0.0
     private var lastFilteredAy = 0.0
@@ -57,6 +63,7 @@ class MotorcycleSensorFusionEngine(
     private var lastGpsLat = 0.0
     private var lastGpsLon = 0.0
     private var lastGpsSpeedMs = 0.0
+    private var lastGpsBearingDeg: Double? = null
     
     private var lastImuTimestampNanos: Long = 0L
 
@@ -86,13 +93,15 @@ class MotorcycleSensorFusionEngine(
             return
         }
 
-        val (bikeAx, bikeAy, bikeAz) = calibrator.transform(fAx, fAy, fAz)
-        val (bikeGx, bikeGy, bikeGz) = calibrator.transform(fGx, fGy, fGz)
+        val (bikeAx, _, _) = calibrator.transform(fAx, fAy, fAz)
+        val (bikeGx, _, bikeGz) = calibrator.transform(fGx, fGy, fGz)
 
         // Physics: A right turn is clockwise seen from above, which is a negative rotation about the Z axis.
         // The convention is a right turn yields positive lean and positive lateral G.
         val yawRateRight = -bikeGz
-        val rollRateDeg = Math.toDegrees(bikeGx)
+        val rollRateDeg = Math.toDegrees(bikeGx).takeIf { it.isFinite() } ?: 0.0
+        currentRollRateDegPerSec = rollRateDeg
+        peakRollRateDegPerSec = max(peakRollRateDegPerSec, abs(rollRateDeg))
 
         if (calibrator.state == CalibrationState.LOCKED) {
             currentLongitudinalG = (bikeAx / 9.80665).takeIf { it.isFinite() } ?: 0.0
@@ -144,14 +153,12 @@ class MotorcycleSensorFusionEngine(
                 !(abs(latitude) < 0.0001 && abs(longitude) < 0.0001)
 
         var finalSpeedMs = speedMs
-        var derivedSpeed = false
         
         val dtSec = if (lastGpsTimeMs > 0) (timestampMs - lastGpsTimeMs) / 1000.0 else 0.0
         
         if (!hasSpeed && dtSec > 0 && isValidGps && (lastGpsLat != 0.0 || lastGpsLon != 0.0)) {
             val dist = haversineDistance(lastGpsLat, lastGpsLon, latitude, longitude)
             finalSpeedMs = (dist / dtSec).takeIf { it.isFinite() } ?: 0.0
-            derivedSpeed = true
         }
 
         currentSpeedKmh = (finalSpeedMs * 3.6).takeIf { it.isFinite() } ?: 0.0
@@ -168,6 +175,22 @@ class MotorcycleSensorFusionEngine(
         }
 
         var finalYawRateDegSec = 0.0
+        if (hasBearing && bearingDeg.isFinite()) {
+            val prevBearing = lastGpsBearingDeg
+            if (prevBearing != null && dtSec > 0) {
+                val rawDiff = (bearingDeg - prevBearing) % 360.0
+                val deltaBearing = when {
+                    rawDiff > 180.0 -> rawDiff - 360.0
+                    rawDiff < -180.0 -> rawDiff + 360.0
+                    else -> rawDiff
+                }
+                finalYawRateDegSec = (deltaBearing / dtSec).takeIf { it.isFinite() } ?: 0.0
+            }
+            lastGpsBearingDeg = bearingDeg
+        } else {
+            lastGpsBearingDeg = null
+        }
+
         var finalLongAccelMs2 = 0.0
         
         if (dtSec > 0) {
@@ -251,6 +274,7 @@ class MotorcycleSensorFusionEngine(
                     if (direction == "LEFT") leftCorners++ else rightCorners++
 
                     val cornerScore = min(100.0, max(0.0, (abs(cornerMaxLean) / 50.0) * 100.0))
+                    lastCornerScore = cornerScore
                     val apexLat = if (cornerApexLat != 0.0 || cornerApexLon != 0.0) cornerApexLat else lastLat
                     val apexLon = if (cornerApexLat != 0.0 || cornerApexLon != 0.0) cornerApexLon else lastLon
 
@@ -308,6 +332,9 @@ class MotorcycleSensorFusionEngine(
         currentLongitudinalG = 0.0
         currentLateralG = 0.0
         currentSpeedKmh = 0.0
+        currentRollRateDegPerSec = 0.0
+        peakRollRateDegPerSec = 0.0
+        lastCornerScore = 0.0
         lastFilteredAx = 0.0
         lastFilteredAy = 0.0
         lastFilteredAz = 9.80665
@@ -326,6 +353,7 @@ class MotorcycleSensorFusionEngine(
         
         lastGpsTimeMs = 0L
         lastGpsSpeedMs = 0.0
+        lastGpsBearingDeg = null
         lastImuTimestampNanos = 0L
     }
 }

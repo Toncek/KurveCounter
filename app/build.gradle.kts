@@ -87,6 +87,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
@@ -134,24 +135,20 @@ dependencies {
 
     implementation(libs.play.services.auth)
     implementation(libs.google.api.client.android)
-    implementation("com.google.api-client:google-api-client:1.33.0")
-    implementation("com.google.api-client:google-api-client-gson:1.33.0")
-    implementation("com.google.http-client:google-http-client-gson:1.39.2")
-    implementation("com.google.http-client:google-http-client-android:1.39.2")
+    implementation(libs.google.api.client)
+    implementation(libs.google.api.client.gson)
+    implementation(libs.google.http.client.gson)
+    implementation(libs.google.http.client.android)
     implementation(libs.google.api.services.drive)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
-    implementation("com.google.http-client:google-http-client-gson:1.39.2")
+    implementation(libs.kotlinx.coroutines.play.services)
+    implementation(libs.androidx.fragment.ktx)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    testImplementation("androidx.test:core:1.5.0")
+    testImplementation(libs.androidx.test.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-}
-
-dependencies {
-    implementation("androidx.fragment:fragment-ktx:1.8.1")
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -32,11 +34,13 @@ import com.motogeek.telemetry.domain.maintenance.MotorcycleBackupDto
 import com.motogeek.telemetry.domain.maintenance.MotorcycleTemplateCatalog
 import com.motogeek.telemetry.domain.maintenance.RestoreMode
 import com.motogeek.telemetry.domain.maintenance.TechnicalSpecsDto
+import com.motogeek.telemetry.domain.maintenance.localizeTorqueName
 import com.motogeek.telemetry.domain.toSafeDouble
 import com.motogeek.telemetry.ui.components.ActiveBikeDropdownCard
 import com.motogeek.telemetry.ui.components.GuidedImportDialog
 import com.motogeek.telemetry.ui.components.SegmentedDigitalText
 import com.motogeek.telemetry.ui.theme.*
+import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -102,6 +106,14 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
     var showAddTorqueDialog by remember { mutableStateOf(false) }
     var showEditSpecsDialog by remember { mutableStateOf(false) }
     var showDeleteBikeConfirm by remember { mutableStateOf(false) }
+    var showCalibrateOdoDialog by remember { mutableStateOf(false) }
+    var calibrateOdoInput by remember(activeBike) {
+        mutableStateOf(
+            activeBike?.totalOdometerKm?.let { odo ->
+                if (odo == odo.toLong().toDouble()) odo.toLong().toString() else odo.toString()
+            } ?: ""
+        )
+    }
     var useBarUnits by remember { mutableStateOf(false) }
     var torqueSearchQuery by remember { mutableStateOf("") }
 
@@ -128,10 +140,12 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Bike Profile & Torques",
+                        text = tr("Bike Profile & Torques", "Profil motorky a momenty"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        fontSize = 17.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 navigationIcon = {
@@ -140,12 +154,35 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                             navController.navigate("home")
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = RacingAmberPrimary)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = tr("Back", "Späť"),
+                            tint = RacingAmberPrimary
+                        )
                     }
                 },
                 actions = {
-                    TextButton(onClick = { viewModel.startNewBikeTutorial() }) {
-                        Text("+ NEW BIKE", color = Color.White, fontWeight = FontWeight.Bold)
+                    TextButton(
+                        onClick = { viewModel.toggleAppLanguage() },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (appLang == AppLang.EN) "EN ▸ SK" else "SK ▸ EN",
+                            color = TelemetryIceCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                    TextButton(
+                        onClick = { viewModel.startNewBikeTutorial() },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = tr("+ NEW BIKE", "+ NOVÁ"),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
                     }
                     Button(
                         onClick = {
@@ -170,15 +207,21 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                                         "Profile Updated",
                                         "Saved changes for ${updated.displayName}"
                                     )
-                                    snackbarHostState.showSnackbar("Motorcycle profile saved successfully!")
+                                    snackbarHostState.showSnackbar(
+                                        appLang.pick(
+                                            "Motorcycle profile saved successfully!",
+                                            "Profil motorky bol úspešne uložený!"
+                                        )
+                                    )
                                 }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
                         shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        Text("SAVE", fontWeight = FontWeight.Bold)
+                        Text(tr("SAVE", "ULOŽIŤ"), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -267,8 +310,14 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("CURRENT TOTAL ODOMETER", color = Color(0xFF6B7A99), fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = tr("CURRENT TOTAL ODOMETER", "AKTUÁLNE CELKOVÉ KILOMETRE"),
+                            color = Color(0xFF6B7A99),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
                         SegmentedDigitalText(
                             text = String.format("%,d", activeBike?.totalOdometerKm?.toInt() ?: 0),
                             unit = "KM",
@@ -276,22 +325,32 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                             fontSize = 22.sp
                         )
                         Text(
-                            text = "Base: ${activeBike?.baseOdometerKm?.toInt() ?: 0} km • Tracked: ${activeBike?.accumulatedTrackedKm?.toInt() ?: 0} km • Offset: ${activeBike?.manualAdjustmentOffsetKm?.toInt() ?: 0} km",
+                            text = tr(
+                                "Base: ${activeBike?.baseOdometerKm?.toInt() ?: 0} km • Tracked: ${activeBike?.accumulatedTrackedKm?.toInt() ?: 0} km • Offset: ${activeBike?.manualAdjustmentOffsetKm?.toInt() ?: 0} km",
+                                "Základ: ${activeBike?.baseOdometerKm?.toInt() ?: 0} km • Zaznamenané: ${activeBike?.accumulatedTrackedKm?.toInt() ?: 0} km • Korekcia: ${activeBike?.manualAdjustmentOffsetKm?.toInt() ?: 0} km"
+                            ),
                             color = Color.Gray,
                             fontSize = 10.sp
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            activeBike?.let {
-                                viewModel.updateActiveBikeOdometer(it.totalOdometerKm)
+                            activeBike?.let { bike ->
+                                calibrateOdoInput = if (bike.totalOdometerKm == bike.totalOdometerKm.toLong().toDouble()) {
+                                    bike.totalOdometerKm.toLong().toString()
+                                } else {
+                                    bike.totalOdometerKm.toString()
+                                }
+                                showCalibrateOdoDialog = true
                             }
                         },
+                        enabled = activeBike != null,
                         colors = ButtonDefaults.buttonColors(containerColor = TftSurfaceElevated),
                         shape = RoundedCornerShape(6.dp),
                         border = BorderStroke(1.dp, TitaniumBorder)
                     ) {
-                        Text("CALIBRATE", color = RacingAmberPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(tr("CALIBRATE", "KALIBROVAŤ"), color = RacingAmberPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -305,7 +364,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "MOTORCYCLE SPECIFICATIONS",
+                        text = tr("MOTORCYCLE SPECIFICATIONS", "ŠPECIFIKÁCIE MOTOCYKLA"),
                         color = Color(0xFF6B7A99),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -316,7 +375,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Display Name / Nickname") },
+                        label = { Text(tr("Display Name / Nickname", "Zobrazovaný názov / Prezývka")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -330,7 +389,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = make,
                             onValueChange = { make = it },
-                            label = { Text("Make (e.g., Yamaha)") },
+                            label = { Text(tr("Make (e.g., Yamaha)", "Značka (napr. Yamaha)")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -342,7 +401,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = model,
                             onValueChange = { model = it },
-                            label = { Text("Model (e.g., MT-09)") },
+                            label = { Text(tr("Model (e.g., MT-09)", "Model (napr. MT-09)")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -357,7 +416,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = yearText,
                             onValueChange = { yearText = it },
-                            label = { Text("Year") },
+                            label = { Text(tr("Year", "Rok")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -369,7 +428,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = ccText,
                             onValueChange = { ccText = it },
-                            label = { Text("Displacement (cc)") },
+                            label = { Text(tr("Displacement (cc)", "Objem (cm³)")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -381,7 +440,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = type,
                             onValueChange = { type = it },
-                            label = { Text("Category") },
+                            label = { Text(tr("Category", "Kategória")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -396,7 +455,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = baseOdoText,
                             onValueChange = { baseOdoText = it },
-                            label = { Text("Starting Odometer (km)") },
+                            label = { Text(tr("Starting Odometer (km)", "Počiatočný stav km")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -408,7 +467,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = buyingPriceText,
                             onValueChange = { buyingPriceText = it },
-                            label = { Text("Purchase Price") },
+                            label = { Text(tr("Purchase Price", "Kúpna cena")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -420,7 +479,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         OutlinedTextField(
                             value = currencySymbol,
                             onValueChange = { currencySymbol = it },
-                            label = { Text("Currency") },
+                            label = { Text(tr("Currency", "Mena")) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = RacingAmberPrimary,
                                 unfocusedBorderColor = TitaniumBorder,
@@ -447,31 +506,56 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "FACTORY SPECS & BOLT TORQUES",
+                            text = tr("FACTORY SPECS & BOLT TORQUES", "TOVÁRENSKÉ ÚDAJE A MOMENTY"),
                             color = Color(0xFF6B7A99),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.weight(1f)
                         )
                         Row {
-                            TextButton(onClick = { useBarUnits = !useBarUnits }) {
-                                Text(if (useBarUnits) "UNIT: BAR" else "UNIT: PSI", color = TelemetryIceCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            TextButton(
+                                onClick = { useBarUnits = !useBarUnits },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = if (useBarUnits) tr("UNIT: BAR", "JEDN: BAR") else tr("UNIT: PSI", "JEDN: PSI"),
+                                    color = TelemetryIceCyan,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            TextButton(onClick = { showEditSpecsDialog = true }) {
-                                Text("EDIT SPECS", color = ApexEmeraldGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            TextButton(
+                                onClick = { showEditSpecsDialog = true },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = tr("EDIT SPECS", "UPRAVIŤ"),
+                                    color = ApexEmeraldGreen,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            TextButton(onClick = { showAddTorqueDialog = true }) {
-                                Text("+ TORQUE", color = RacingAmberPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            TextButton(
+                                onClick = { showAddTorqueDialog = true },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = tr("+ TORQUE", "+ MOMENT"),
+                                    color = RacingAmberPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
 
                     val frontPressureStr = specs.frontTirePressurePsi?.let { frontPsi ->
-                        if (useBarUnits) String.format("%.2f BAR", frontPsi / 14.5038) else "${frontPsi.toInt()} PSI"
+                        if (useBarUnits) String.format(Locale.US, "%.2f BAR", frontPsi / 14.5038) else "${frontPsi.toInt()} PSI"
                     } ?: "—"
                     val rearPressureStr = specs.rearTirePressurePsi?.let { rearPsi ->
-                        if (useBarUnits) String.format("%.2f BAR", rearPsi / 14.5038) else "${rearPsi.toInt()} PSI"
+                        if (useBarUnits) String.format(Locale.US, "%.2f BAR", rearPsi / 14.5038) else "${rearPsi.toInt()} PSI"
                     } ?: "—"
 
                     // Key Fluid & Tire Pressure Chips
@@ -479,10 +563,10 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        SpecPill("Oil Cap", specs.oilCapacityLiters?.let { "$it L" } ?: "—", TelemetryIceCyan, Modifier.weight(1f))
-                        SpecPill("Front Tire", frontPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
-                        SpecPill("Rear Tire", rearPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
-                        SpecPill("Chain Slack", specs.chainSlackMm?.trim()?.ifBlank { null } ?: "—", WarningGold, Modifier.weight(1f))
+                        SpecPill(tr("Oil Cap", "Objem oleja"), specs.oilCapacityLiters?.let { "$it L" } ?: "—", TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill(tr("Front Tire", "Predná pneu"), frontPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
+                        SpecPill(tr("Rear Tire", "Zadná pneu"), rearPressureStr, ApexEmeraldGreen, Modifier.weight(1f))
+                        SpecPill(tr("Chain Slack", "Vôľa reťaze"), specs.chainSlackMm?.trim()?.ifBlank { null } ?: "—", WarningGold, Modifier.weight(1f))
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -491,10 +575,10 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        SpecPill("Oil Grade", specs.oilViscosityAndSpec.trim().ifBlank { "—" }.take(10), TelemetryIceCyan, Modifier.weight(1f))
-                        SpecPill("Coolant", specs.coolantCapacityLiters?.let { "$it L" } ?: "—", TelemetryIceCyan, Modifier.weight(1f))
-                        SpecPill("Brake Fluid", specs.brakeFluidType.trim().ifBlank { "—" }, WarningGold, Modifier.weight(1f))
-                        SpecPill("Spark Plug", specs.sparkPlugModel.trim().ifBlank { "—" }.take(10), RacingAmberPrimary, Modifier.weight(1f))
+                        SpecPill(tr("Oil Grade", "Typ oleja"), specs.oilViscosityAndSpec.trim().ifBlank { "—" }.take(10), TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill(tr("Coolant", "Chladiaca"), specs.coolantCapacityLiters?.let { "$it L" } ?: "—", TelemetryIceCyan, Modifier.weight(1f))
+                        SpecPill(tr("Brake Fluid", "Brzdovka"), specs.brakeFluidType.trim().ifBlank { "—" }, WarningGold, Modifier.weight(1f))
+                        SpecPill(tr("Spark Plug", "Sviečka"), specs.sparkPlugModel.trim().ifBlank { "—" }.take(10), RacingAmberPrimary, Modifier.weight(1f))
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -502,7 +586,13 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     OutlinedTextField(
                         value = torqueSearchQuery,
                         onValueChange = { torqueSearchQuery = it },
-                        placeholder = { Text("Search bolt or nut torque (Nm)...", color = Color.Gray, fontSize = 12.sp) },
+                        placeholder = {
+                            Text(
+                                tr("Search bolt or nut torque (Nm)...", "Hľadať moment skrutky / matice (Nm)..."),
+                                color = Color.Gray,
+                                fontSize = 12.sp
+                            )
+                        },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp)) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
@@ -517,12 +607,16 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     val filteredTorques = allTorques.filter {
-                        it.key.contains(torqueSearchQuery, ignoreCase = true)
+                        it.key.contains(torqueSearchQuery, ignoreCase = true) ||
+                            localizeTorqueName(it.key, appLang.code).contains(torqueSearchQuery, ignoreCase = true)
                     }
 
                     if (filteredTorques.isEmpty()) {
                         Text(
-                            text = "No bolt torques found. Tap '+ QUICK ADD TORQUE' to add one.",
+                            text = tr(
+                                "No bolt torques found. Tap '+ TORQUE' to add one.",
+                                "Nenašli sa žiadne uťahovacie momenty. Ťuknite na '+ MOMENT' pre pridanie."
+                            ),
                             color = Color.Gray,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(vertical = 12.dp)
@@ -530,6 +624,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     } else {
                         filteredTorques.forEach { (boltName, torqueNm) ->
                             val isCustomBolt = specs.boltTorquesNm?.containsKey(boltName) == true
+                            val localizedBoltName = localizeTorqueName(boltName, appLang.code)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -538,7 +633,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = boltName,
+                                    text = localizedBoltName,
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Medium,
@@ -562,12 +657,22 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                                                     val updatedSpecs = specs.copy(boltTorquesNm = updatedTorques)
                                                     val updatedBike = activeBike!!.copy(technicalSpecsJson = json.encodeToString(updatedSpecs))
                                                     viewModel.repository.updateMotorcycle(updatedBike)
-                                                    snackbarHostState.showSnackbar("Removed custom torque: $boltName")
+                                                    snackbarHostState.showSnackbar(
+                                                        appLang.pick(
+                                                            "Removed custom torque: $localizedBoltName",
+                                                            "Odstránený vlastný moment: $localizedBoltName"
+                                                        )
+                                                    )
                                                 }
                                             },
                                             modifier = Modifier.size(28.dp)
                                         ) {
-                                            Icon(Icons.Default.Close, contentDescription = "Delete torque", tint = Color.Gray, modifier = Modifier.size(14.dp))
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = tr("Delete torque", "Odstrániť moment"),
+                                                tint = Color.Gray,
+                                                modifier = Modifier.size(14.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -592,7 +697,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "AI SERVICE MANUAL EXTRACTOR",
+                            text = tr("AI SERVICE MANUAL EXTRACTOR", "AI EXTRAKTOR SERVISNÉHO MANUÁLU"),
                             color = Color(0xFF6B7A99),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -603,8 +708,13 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
+                    val bikeTailoredEn = activeBike?.let { " tailored for ${it.year} ${it.make} ${it.model}" } ?: ""
+                    val bikeTailoredSk = activeBike?.let { " prispôsobený pre ${it.year} ${it.make} ${it.model}" } ?: ""
                     Text(
-                        text = "Feed your motorcycle's PDF service manual or workshop book into ChatGPT, Claude, or Gemini using our Master Mechanic prompt" + (activeBike?.let { " tailored for ${it.year} ${it.make} ${it.model}" } ?: "") + ". Copy the resulting JSON and paste it into KurveCounter to auto-populate all service schedules and bolt torques!",
+                        text = tr(
+                            "Feed your motorcycle's PDF service manual or workshop book into ChatGPT, Claude, or Gemini using our Master Mechanic prompt$bikeTailoredEn. Copy the resulting JSON and paste it into KurveCounter to auto-populate all service schedules and bolt torques!",
+                            "Nahrajte PDF servisný manuál alebo dielenskú príručku do ChatGPT, Claude alebo Gemini s naším Master Mechanic promptom$bikeTailoredSk. Skopírujte výsledný JSON a vložte ho do KurveCounter na automatické vyplnenie servisných intervalov a momentov!"
+                        ),
                         color = Color.LightGray,
                         fontSize = 12.sp,
                         lineHeight = 17.sp
@@ -631,7 +741,11 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null, tint = RacingAmberPrimary, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Copy AI Master Mechanic Prompt", color = RacingAmberPrimary, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = tr("Copy AI Master Mechanic Prompt", "Kopírovať AI Master Mechanic Prompt"),
+                            color = RacingAmberPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -652,7 +766,11 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     ) {
                         Icon(Icons.Default.ContentPaste, contentDescription = null, tint = ApexEmeraldGreen, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Paste AI JSON / Clipboard Import", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = tr("Paste AI JSON / Clipboard Import", "Vložiť AI JSON zo schránky"),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -684,7 +802,7 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "BUILT-IN MOTORCYCLE TEMPLATES",
+                        text = tr("BUILT-IN MOTORCYCLE TEMPLATES", "VSTAVANÉ ŠABLÓNY MOTOCYKLOV"),
                         color = Color(0xFF6B7A99),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -693,28 +811,41 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    TemplateTile("Universal Motorcycle", "Standard 5000 km intervals, 4-stroke", onApply = {
-                        pendingTemplate = "Universal Motorcycle" to MotorcycleTemplateCatalog.universal
-                    })
-                    TemplateTile("Yamaha MT-09 / Tracer 9", "CP3 890cc • 10,000 km service • Factory torques", onApply = {
-                        pendingTemplate = "Yamaha MT-09" to MotorcycleTemplateCatalog.mt09
-                    })
-                    TemplateTile("Honda CB650R / CBR650R", "Inline-4 649cc • 12,000 km service intervals", onApply = {
-                        pendingTemplate = "Honda CB650R" to MotorcycleTemplateCatalog.cb650r
-                    })
-                    TemplateTile("BMW R1250GS Boxer", "1254cc ShiftCam • Cardan shaft & valve checks", onApply = {
-                        pendingTemplate = "BMW R1250GS" to MotorcycleTemplateCatalog.r1250gs
-                    })
-                    TemplateTile("KTM 890 Duke / Adventure", "889cc Parallel-Twin • 15,000 km intervals & torques", onApply = {
-                        pendingTemplate = "KTM 890 Duke" to MotorcycleTemplateCatalog.ktm890
-                    })
-                    TemplateTile("Kawasaki Z900", "948cc Inline-4 • 12,000 km intervals & torques", onApply = {
-                        pendingTemplate = "Kawasaki Z900" to MotorcycleTemplateCatalog.z900
-                    })
+                    val universalLabel = tr("Universal Motorcycle", "Univerzálny motocykel")
+                    TemplateTile(
+                        title = universalLabel,
+                        subtitle = tr("Standard 5000 km intervals, 4-stroke", "Štandardné intervaly 5000 km, 4-takt"),
+                        onApply = { pendingTemplate = universalLabel to MotorcycleTemplateCatalog.universal }
+                    )
+                    TemplateTile(
+                        title = "Yamaha MT-09 / Tracer 9",
+                        subtitle = tr("CP3 890cc • 10,000 km service • Factory torques", "CP3 890 cm³ • servis 10 000 km • Továrenské momenty"),
+                        onApply = { pendingTemplate = "Yamaha MT-09" to MotorcycleTemplateCatalog.mt09 }
+                    )
+                    TemplateTile(
+                        title = "Honda CB650R / CBR650R",
+                        subtitle = tr("Inline-4 649cc • 12,000 km service intervals", "Radový 4-valec 649 cm³ • intervaly 12 000 km"),
+                        onApply = { pendingTemplate = "Honda CB650R" to MotorcycleTemplateCatalog.cb650r }
+                    )
+                    TemplateTile(
+                        title = "BMW R1250GS Boxer",
+                        subtitle = tr("1254cc ShiftCam • Cardan shaft & valve checks", "1254 cm³ ShiftCam • Kardan a kontrola ventilov"),
+                        onApply = { pendingTemplate = "BMW R1250GS" to MotorcycleTemplateCatalog.r1250gs }
+                    )
+                    TemplateTile(
+                        title = "KTM 890 Duke / Adventure",
+                        subtitle = tr("889cc Parallel-Twin • 15,000 km intervals & torques", "889 cm³ dvojvalec • intervaly 15 000 km a momenty"),
+                        onApply = { pendingTemplate = "KTM 890 Duke" to MotorcycleTemplateCatalog.ktm890 }
+                    )
+                    TemplateTile(
+                        title = "Kawasaki Z900",
+                        subtitle = tr("948cc Inline-4 • 12,000 km intervals & torques", "948 cm³ radový 4-valec • intervaly 12 000 km a momenty"),
+                        onApply = { pendingTemplate = "Kawasaki Z900" to MotorcycleTemplateCatalog.z900 }
+                    )
                 }
             }
 
-            if (allBikes.size > 1 && activeBike != null) {
+            if (activeBike != null) {
                 OutlinedButton(
                     onClick = { showDeleteBikeConfirm = true },
                     border = BorderStroke(1.dp, RedlineCrimson),
@@ -723,7 +854,11 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null, tint = RedlineCrimson, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Delete Motorcycle (${activeBike?.displayName})", color = RedlineCrimson, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = tr("Delete Motorcycle (${activeBike?.displayName})", "Vymazať motorku (${activeBike?.displayName})"),
+                        color = RedlineCrimson,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
@@ -731,17 +866,92 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
         }
     }
 
+    if (showCalibrateOdoDialog && activeBike != null) {
+        val parsedKm = calibrateOdoInput.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 }
+        AlertDialog(
+            onDismissRequest = { showCalibrateOdoDialog = false },
+            containerColor = TftSurfaceDark,
+            title = {
+                Text(
+                    text = tr("Calibrate Odometer", "Kalibrovať počítadlo km"),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = tr(
+                            "Enter the current dashboard odometer reading for ${activeBike?.displayName}:",
+                            "Zadajte aktuálny stav počítadla km z prístrojovej dosky pre ${activeBike?.displayName}:"
+                        ),
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = calibrateOdoInput,
+                        onValueChange = { calibrateOdoInput = it },
+                        label = { Text(tr("Dashboard Odometer (km)", "Stav počítadla (km)")) },
+                        isError = calibrateOdoInput.isNotBlank() && parsedKm == null,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RacingAmberPrimary,
+                            unfocusedBorderColor = TitaniumBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (parsedKm != null) {
+                            viewModel.updateActiveBikeOdometer(parsedKm)
+                            showCalibrateOdoDialog = false
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    appLang.pick(
+                                        "Odometer calibrated to ${parsedKm.toInt()} km",
+                                        "Počítadlo nakalibrované na ${parsedKm.toInt()} km"
+                                    )
+                                )
+                            }
+                        }
+                    },
+                    enabled = parsedKm != null,
+                    colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
+                ) {
+                    Text(tr("Calibrate", "Kalibrovať"), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCalibrateOdoDialog = false }) {
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
+                }
+            }
+        )
+    }
+
     pendingTemplate?.let { (label, templateDto) ->
         AlertDialog(
             onDismissRequest = { pendingTemplate = null },
             containerColor = TftSurfaceDark,
-            title = { Text("Apply $label Template?", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = { Text(tr("Apply $label Template?", "Použiť šablónu $label?"), color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     text = if (activeBike != null) {
-                        "Choose whether to apply $label factory specs & schedule to your active motorcycle (${activeBike?.displayName}) or add it as a new motorcycle in your garage."
+                        tr(
+                            "Choose whether to apply $label factory specs & schedule to your active motorcycle (${activeBike?.displayName}) or add it as a new motorcycle in your garage.",
+                            "Vyberte, či chcete použiť továrenské údaje a servisný plán šablóny $label pre aktívnu motorku (${activeBike?.displayName}), alebo ju pridať ako novú motorku do garáže."
+                        )
                     } else {
-                        "Add $label with factory specs, torques, and maintenance schedule to your garage?"
+                        tr(
+                            "Add $label with factory specs, torques, and maintenance schedule to your garage?",
+                            "Pridať $label s továrenskými údajmi, momentmi a servisným plánom do garáže?"
+                        )
                     },
                     color = Color.LightGray,
                     fontSize = 13.sp
@@ -754,30 +964,44 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                             onClick = {
                                 viewModel.applyTemplate(templateDto, applyToActiveBike = true)
                                 pendingTemplate = null
-                                scope.launch { snackbarHostState.showSnackbar("Applied $label specs & schedule to ${activeBike?.displayName}!") }
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        appLang.pick(
+                                            "Applied $label specs & schedule to ${activeBike?.displayName}!",
+                                            "Údaje a plán šablóny $label použité pre ${activeBike?.displayName}!"
+                                        )
+                                    )
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Update Active Bike (${activeBike?.displayName})", fontWeight = FontWeight.Bold)
+                            Text(tr("Update Active Bike (${activeBike?.displayName})", "Aktualizovať aktívnu (${activeBike?.displayName})"), fontWeight = FontWeight.Bold)
                         }
                     }
                     OutlinedButton(
                         onClick = {
                             viewModel.applyTemplate(templateDto, applyToActiveBike = false)
                             pendingTemplate = null
-                            scope.launch { snackbarHostState.showSnackbar("Added $label as a new motorcycle!") }
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    appLang.pick(
+                                        "Added $label as a new motorcycle!",
+                                        "Motorka $label bola pridaná ako nová!"
+                                    )
+                                )
+                            }
                         },
                         border = BorderStroke(1.dp, TelemetryIceCyan),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Add as New Motorcycle", color = TelemetryIceCyan, fontWeight = FontWeight.Bold)
+                        Text(tr("Add as New Motorcycle", "Pridať ako novú motorku"), color = TelemetryIceCyan, fontWeight = FontWeight.Bold)
                     }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingTemplate = null }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
                 }
             }
         )
@@ -787,11 +1011,14 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
         AlertDialog(
             onDismissRequest = { showPasteDialog = false },
             containerColor = TftSurfaceDark,
-            title = { Text("Paste AI JSON / Schedule", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = { Text(tr("Paste AI JSON / Schedule", "Vložiť AI JSON / Plán"), color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     Text(
-                        text = "Paste the JSON output produced by the LLM from your service manual:",
+                        text = tr(
+                            "Paste the JSON output produced by the LLM from your service manual:",
+                            "Vložte JSON výstup vygenerovaný AI z vášho servisného manuálu:"
+                        ),
                         color = Color.LightGray,
                         fontSize = 12.sp
                     )
@@ -899,10 +1126,13 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
         AlertDialog(
             onDismissRequest = { showDeleteBikeConfirm = false },
             containerColor = TftSurfaceDark,
-            title = { Text("Delete ${activeBike?.displayName}?", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = { Text(tr("Delete ${activeBike?.displayName}?", "Vymazať ${activeBike?.displayName}?"), color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "This will permanently delete ${activeBike?.displayName} and its associated logs. Your other motorcycles will remain untouched.",
+                    tr(
+                        "This will permanently delete ${activeBike?.displayName} and its associated logs. Your other motorcycles will remain untouched.",
+                        "Týmto natrvalo vymažete motorku ${activeBike?.displayName} a jej záznamy. Ostatné motocykle zostanú nedotknuté."
+                    ),
                     color = Color.LightGray,
                     fontSize = 13.sp
                 )
@@ -916,12 +1146,12 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RedlineCrimson)
                 ) {
-                    Text("Delete Motorcycle", fontWeight = FontWeight.Bold)
+                    Text(tr("Delete Motorcycle", "Vymazať motorku"), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteBikeConfirm = false }) {
-                    Text("Cancel", color = Color.Gray)
+                    Text(tr("Cancel", "Zrušiť"), color = Color.Gray)
                 }
             }
         )
@@ -930,13 +1160,19 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
     if (showEditSpecsDialog && activeBike != null) {
         EditTechnicalSpecsDialog(
             initialSpecs = specs,
+            useBarUnits = useBarUnits,
             onDismiss = { showEditSpecsDialog = false },
             onSave = { updatedSpecs ->
                 scope.launch {
                     val updatedBike = activeBike!!.copy(technicalSpecsJson = json.encodeToString(updatedSpecs))
                     viewModel.repository.updateMotorcycle(updatedBike)
                     showEditSpecsDialog = false
-                    snackbarHostState.showSnackbar("Technical & fluid specifications updated!")
+                    snackbarHostState.showSnackbar(
+                        appLang.pick(
+                            "Technical & fluid specifications updated!",
+                            "Technické a prevádzkové špecifikácie aktualizované!"
+                        )
+                    )
                 }
             }
         )
@@ -953,7 +1189,12 @@ fun BikeInfoScreen(viewModel: MainViewModel, navController: NavController) {
                     val updatedSpecs = specs.copy(boltTorquesNm = updatedTorques)
                     val updatedBike = activeBike!!.copy(technicalSpecsJson = json.encodeToString(updatedSpecs))
                     viewModel.repository.updateMotorcycle(updatedBike)
-                    snackbarHostState.showSnackbar("Added torque spec: $boltName = ${torqueNm.toInt()} Nm")
+                    snackbarHostState.showSnackbar(
+                        appLang.pick(
+                            "Added torque spec: ${localizeTorqueName(boltName, appLang.code)} = ${torqueNm.toInt()} Nm",
+                            "Pridaný uťahovací moment: ${localizeTorqueName(boltName, appLang.code)} = ${torqueNm.toInt()} Nm"
+                        )
+                    )
                     showAddTorqueDialog = false
                 }
             }
@@ -983,19 +1224,33 @@ private fun SpecPill(label: String, value: String, color: Color, modifier: Modif
 @Composable
 private fun EditTechnicalSpecsDialog(
     initialSpecs: TechnicalSpecsDto,
+    useBarUnits: Boolean,
     onDismiss: () -> Unit,
     onSave: (TechnicalSpecsDto) -> Unit
 ) {
-    var oilCap by remember { mutableStateOf(initialSpecs.oilCapacityLiters?.toString() ?: "") }
-    var oilVisc by remember { mutableStateOf(initialSpecs.oilViscosityAndSpec) }
-    var coolantCap by remember { mutableStateOf(initialSpecs.coolantCapacityLiters?.toString() ?: "") }
-    var brakeFluid by remember { mutableStateOf(initialSpecs.brakeFluidType) }
-    var frontPsi by remember { mutableStateOf(initialSpecs.frontTirePressurePsi?.toString() ?: "") }
-    var rearPsi by remember { mutableStateOf(initialSpecs.rearTirePressurePsi?.toString() ?: "") }
-    var chainSlack by remember { mutableStateOf(initialSpecs.chainSlackMm ?: "") }
-    var sparkPlug by remember { mutableStateOf(initialSpecs.sparkPlugModel) }
-    var valveIntake by remember { mutableStateOf(initialSpecs.valveClearanceIntakeMm) }
-    var valveExhaust by remember { mutableStateOf(initialSpecs.valveClearanceExhaustMm) }
+    val psiPerBar = 14.5038
+    var oilCap by remember(initialSpecs) { mutableStateOf(initialSpecs.oilCapacityLiters?.toString() ?: "") }
+    var oilVisc by remember(initialSpecs) { mutableStateOf(initialSpecs.oilViscosityAndSpec) }
+    var coolantCap by remember(initialSpecs) { mutableStateOf(initialSpecs.coolantCapacityLiters?.toString() ?: "") }
+    var brakeFluid by remember(initialSpecs) { mutableStateOf(initialSpecs.brakeFluidType) }
+    var frontPressure by remember(initialSpecs, useBarUnits) {
+        mutableStateOf(
+            initialSpecs.frontTirePressurePsi?.let {
+                if (useBarUnits) String.format(Locale.US, "%.2f", it / psiPerBar) else it.toString()
+            } ?: ""
+        )
+    }
+    var rearPressure by remember(initialSpecs, useBarUnits) {
+        mutableStateOf(
+            initialSpecs.rearTirePressurePsi?.let {
+                if (useBarUnits) String.format(Locale.US, "%.2f", it / psiPerBar) else it.toString()
+            } ?: ""
+        )
+    }
+    var chainSlack by remember(initialSpecs) { mutableStateOf(initialSpecs.chainSlackMm ?: "") }
+    var sparkPlug by remember(initialSpecs) { mutableStateOf(initialSpecs.sparkPlugModel) }
+    var valveIntake by remember(initialSpecs) { mutableStateOf(initialSpecs.valveClearanceIntakeMm) }
+    var valveExhaust by remember(initialSpecs) { mutableStateOf(initialSpecs.valveClearanceExhaustMm) }
 
     fun parseOptionalPositiveDouble(raw: String): Double? {
         val parsed = raw.trim().replace(',', '.').toDoubleOrNull() ?: return null
@@ -1005,7 +1260,7 @@ private fun EditTechnicalSpecsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TftSurfaceDark,
-        title = { Text("Edit Fluid & Workshop Specs", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = { Text(tr("Edit Fluid & Workshop Specs", "Upraviť náplne a dielenské údaje"), color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1015,7 +1270,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = oilCap,
                         onValueChange = { oilCap = it },
-                        label = { Text("Oil w/ Filter (L)") },
+                        label = { Text(tr("Oil w/ Filter (L)", "Olej s filtrom (L)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1027,7 +1282,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = oilVisc,
                         onValueChange = { oilVisc = it },
-                        label = { Text("Oil Viscosity") },
+                        label = { Text(tr("Oil Viscosity", "Viskozita oleja")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1041,7 +1296,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = coolantCap,
                         onValueChange = { coolantCap = it },
-                        label = { Text("Coolant (L)") },
+                        label = { Text(tr("Coolant (L)", "Chladiaca (L)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1053,7 +1308,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = brakeFluid,
                         onValueChange = { brakeFluid = it },
-                        label = { Text("Brake Fluid") },
+                        label = { Text(tr("Brake Fluid", "Brzdová kvapalina")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1065,9 +1320,14 @@ private fun EditTechnicalSpecsDialog(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        value = frontPsi,
-                        onValueChange = { frontPsi = it },
-                        label = { Text("Front Tire (PSI)") },
+                        value = frontPressure,
+                        onValueChange = { frontPressure = it },
+                        label = {
+                            Text(
+                                if (useBarUnits) tr("Front Tire (BAR)", "Predná pneu (BAR)")
+                                else tr("Front Tire (PSI)", "Predná pneu (PSI)")
+                            )
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1077,9 +1337,14 @@ private fun EditTechnicalSpecsDialog(
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
-                        value = rearPsi,
-                        onValueChange = { rearPsi = it },
-                        label = { Text("Rear Tire (PSI)") },
+                        value = rearPressure,
+                        onValueChange = { rearPressure = it },
+                        label = {
+                            Text(
+                                if (useBarUnits) tr("Rear Tire (BAR)", "Zadná pneu (BAR)")
+                                else tr("Rear Tire (PSI)", "Zadná pneu (PSI)")
+                            )
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1093,7 +1358,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = chainSlack,
                         onValueChange = { chainSlack = it },
-                        label = { Text("Chain Slack (mm)") },
+                        label = { Text(tr("Chain Slack (mm)", "Vôľa reťaze (mm)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1105,7 +1370,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = sparkPlug,
                         onValueChange = { sparkPlug = it },
-                        label = { Text("Spark Plug Model") },
+                        label = { Text(tr("Spark Plug Model", "Model sviečky")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1119,7 +1384,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = valveIntake,
                         onValueChange = { valveIntake = it },
-                        label = { Text("Intake Valve (mm)") },
+                        label = { Text(tr("Intake Valve (mm)", "Sací ventil (mm)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1131,7 +1396,7 @@ private fun EditTechnicalSpecsDialog(
                     OutlinedTextField(
                         value = valveExhaust,
                         onValueChange = { valveExhaust = it },
-                        label = { Text("Exhaust Valve (mm)") },
+                        label = { Text(tr("Exhaust Valve (mm)", "Výfukový ventil (mm)")) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = RacingAmberPrimary,
                             unfocusedBorderColor = TitaniumBorder,
@@ -1146,14 +1411,20 @@ private fun EditTechnicalSpecsDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    val parsedFrontPsi = parseOptionalPositiveDouble(frontPressure)?.let {
+                        if (useBarUnits) it * psiPerBar else it
+                    }
+                    val parsedRearPsi = parseOptionalPositiveDouble(rearPressure)?.let {
+                        if (useBarUnits) it * psiPerBar else it
+                    }
                     onSave(
                         initialSpecs.copy(
                             oilCapacityLiters = parseOptionalPositiveDouble(oilCap),
                             oilViscosityAndSpec = oilVisc.trim(),
                             coolantCapacityLiters = parseOptionalPositiveDouble(coolantCap),
                             brakeFluidType = brakeFluid.trim(),
-                            frontTirePressurePsi = parseOptionalPositiveDouble(frontPsi),
-                            rearTirePressurePsi = parseOptionalPositiveDouble(rearPsi),
+                            frontTirePressurePsi = parsedFrontPsi,
+                            rearTirePressurePsi = parsedRearPsi,
                             chainSlackMm = chainSlack.trim().ifBlank { null },
                             sparkPlugModel = sparkPlug.trim(),
                             valveClearanceIntakeMm = valveIntake.trim(),
@@ -1163,11 +1434,11 @@ private fun EditTechnicalSpecsDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
-                Text("Save Specs", fontWeight = FontWeight.Bold)
+                Text(tr("Save Specs", "Uložiť údaje"), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+            TextButton(onClick = onDismiss) { Text(tr("Cancel", "Zrušiť"), color = Color.Gray) }
         }
     )
 }
@@ -1183,13 +1454,13 @@ private fun QuickAddTorqueDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TftSurfaceDark,
-        title = { Text("Quick Add Torque Spec", color = Color.White, fontWeight = FontWeight.Bold) },
+        title = { Text(tr("Quick Add Torque Spec", "Rýchle pridanie momentu"), color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 OutlinedTextField(
                     value = boltName,
                     onValueChange = { boltName = it },
-                    label = { Text("Bolt / Fastener Name (e.g. Front Axle Pinch)") },
+                    label = { Text(tr("Bolt / Fastener Name (e.g. Front Axle Pinch)", "Názov skrutky / matice (napr. Predná os)")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -1202,7 +1473,7 @@ private fun QuickAddTorqueDialog(
                 OutlinedTextField(
                     value = torqueNmText,
                     onValueChange = { torqueNmText = it },
-                    label = { Text("Torque in Nm (e.g. 23)") },
+                    label = { Text(tr("Torque in Nm (e.g. 23)", "Moment v Nm (napr. 23)")) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = RacingAmberPrimary,
                         unfocusedBorderColor = TitaniumBorder,
@@ -1223,11 +1494,11 @@ private fun QuickAddTorqueDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = RacingAmberPrimary)
             ) {
-                Text("Add Torque", fontWeight = FontWeight.Bold)
+                Text(tr("Add Torque", "Pridať moment"), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel", color = Color.Gray) }
+            TextButton(onClick = onDismiss) { Text(tr("Cancel", "Zrušiť"), color = Color.Gray) }
         }
     )
 }
@@ -1261,7 +1532,7 @@ private fun TemplateTile(title: String, subtitle: String, onApply: () -> Unit) {
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 modifier = Modifier.height(32.dp)
             ) {
-                Text("Apply", color = RacingAmberPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(tr("Apply", "Použiť"), color = RacingAmberPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

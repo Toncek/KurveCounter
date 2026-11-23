@@ -345,4 +345,118 @@ class DomainLogicTest {
         assertTrue(tasksSk.any { it.taskName.contains("Motorový olej") })
         assertTrue(tasksSk.any { it.notes.contains("Výpustná skrutka") }) // Slovak procedure guides
     }
+
+    @Test
+    fun testBiquadButterworthFilterCutoffResponse() {
+        val sampleRate = 100.0
+        val filterLow = BiquadButterworthFilter(sampleRateHz = sampleRate, cutoffHz = 3.5)
+        val filterHigh = BiquadButterworthFilter(sampleRateHz = sampleRate, cutoffHz = 3.5)
+
+        var maxLowOut = 0.0
+        var maxHighOut = 0.0
+        for (i in 0 until 400) {
+            val t = i / sampleRate
+            val lowSample = kotlin.math.sin(2.0 * kotlin.math.PI * 1.0 * t)
+            val highSample = kotlin.math.sin(2.0 * kotlin.math.PI * 30.0 * t)
+            val lowOut = filterLow.process(lowSample)
+            val highOut = filterHigh.process(highSample)
+            if (i >= 200) {
+                maxLowOut = kotlin.math.max(maxLowOut, kotlin.math.abs(lowOut))
+                maxHighOut = kotlin.math.max(maxHighOut, kotlin.math.abs(highOut))
+            }
+        }
+        assertTrue("1 Hz passband should be > 0.8, was $maxLowOut", maxLowOut > 0.8)
+        assertTrue("30 Hz stopband should be < 0.15, was $maxHighOut", maxHighOut < 0.15)
+    }
+
+    @Test
+    fun testBreakInProgressAndAdditionalDateFormats() {
+        val evaluator = MaintenanceEvaluator()
+        val now = LocalDate.of(2026, 6, 1)
+        val bike = MotorcycleEntity(
+            id = "bike_breakin",
+            make = "Yamaha",
+            model = "MT-09",
+            year = 2026,
+            engineDisplacementCc = 890,
+            baseOdometerKm = 500.0,
+            accumulatedTrackedKm = 0.0,
+            manualAdjustmentOffsetKm = 0.0,
+            technicalSpecsJson = "{}",
+            startDateIso = "2026.05.01",
+            isActive = true
+        )
+        val oilTask = MaintenanceTaskEntity(
+            taskId = "STD_ENGINE_OIL",
+            motorcycleId = bike.id,
+            category = "Engine",
+            taskName = "Engine Oil & Filter",
+            actionType = "Replace",
+            firstBreakInAtKm = 1000.0,
+            intervalKm = 10000.0,
+            intervalMonths = 12,
+            warningThresholdKm = 500.0,
+            warningThresholdDays = 30,
+            oemPartNumbersJson = "[]",
+            notes = ""
+        )
+        val eval = evaluator.evaluate(bike, listOf(oilTask), emptyList(), now).single()
+        assertEquals(1000.0, eval.nextDueOdometerKm!!, 0.01)
+        assertEquals(500.0, eval.remainingKm!!, 0.01)
+        assertEquals(0.50f, eval.progressFraction, 0.02f)
+
+        val dotDate = MaintenanceEvaluator.parseFlexibleLocalDate("2026.05.15", LocalDate.MIN)
+        val slashDate = MaintenanceEvaluator.parseFlexibleLocalDate("2026/05/15", LocalDate.MIN)
+        assertEquals(LocalDate.of(2026, 5, 15), dotDate)
+        assertEquals(LocalDate.of(2026, 5, 15), slashDate)
+    }
+
+    @Test
+    fun testAllTemplatesHaveCompleteTechnicalSpecs() {
+        val templates = MotorcycleTemplateCatalog.allTemplates
+        assertEquals(6, templates.size)
+        templates.forEach { template ->
+            val specs = template.technicalSpecs
+            assertNotNull("Missing technicalSpecs for ${template.motorcycle.model}", specs)
+            val torques = specs!!.toConsolidatedTorqueMap()
+            assertEquals("Expected 11 consolidated torques for ${template.motorcycle.model}", 11, torques.size)
+        }
+    }
+
+    @Test
+    fun testLocalizeTorqueNameEnAndSk() {
+        assertEquals(
+            "Rear Axle Nut",
+            com.motogeek.telemetry.domain.maintenance.localizeTorqueName("Rear Axle Nut", "en")
+        )
+        assertEquals(
+            "Matica zadnej osi",
+            com.motogeek.telemetry.domain.maintenance.localizeTorqueName("Rear Axle Nut", "sk")
+        )
+        assertEquals(
+            "Olejový filter",
+            com.motogeek.telemetry.domain.maintenance.localizeTorqueName("Oil Filter", "sk")
+        )
+    }
+
+    @Test
+    fun testSensorFusionGpsYawRateAndRollRateMetrics() {
+        val engine = MotorcycleSensorFusionEngine { }
+        var tsNanos = 1_000_000_000L
+        var wallMs = 1_700_000_000_000L
+        for (i in 0..160) {
+            engine.processImu(tsNanos, 0.0, 0.0, 9.80665, 0.0, 0.0, 0.0, wallClockMs = wallMs)
+            tsNanos += 10_000_000L
+            wallMs += 10L
+        }
+        engine.calibrateManualZero()
+        engine.processGps(wallMs, 20.0, true, 10.0, true, 48.0, 17.0)
+        engine.processGps(wallMs + 1000L, 20.0, true, 25.0, true, 48.0001, 17.0001)
+        for (i in 0..20) {
+            tsNanos += 10_000_000L
+            wallMs += 10L
+            engine.processImu(tsNanos, 0.0, 0.0, 9.80665, 0.8, 0.8, 0.0, wallClockMs = wallMs)
+        }
+        assertTrue(engine.peakRollRateDegPerSec > 0.0)
+    }
 }

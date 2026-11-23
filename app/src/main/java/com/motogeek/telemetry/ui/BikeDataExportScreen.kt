@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -136,7 +138,7 @@ fun BikeDataExportScreen(viewModel: MainViewModel, navController: NavController)
                             navController.navigate("home")
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = tr("Back", "Späť"), tint = RacingAmberPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = tr("Back", "Späť"), tint = RacingAmberPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = CarbonObsidianBg)
@@ -207,7 +209,7 @@ fun BikeDataExportScreen(viewModel: MainViewModel, navController: NavController)
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             tr("Share Digital Service Book (HTML Report)", "Zdieľať servisnú knižku (HTML report)"),

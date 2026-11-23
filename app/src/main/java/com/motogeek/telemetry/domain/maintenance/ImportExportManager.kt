@@ -73,6 +73,7 @@ class ImportExportManager(private val context: Context, private val repository: 
         }
     }
 
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private val json = Json {
         encodeDefaults = true
         ignoreUnknownKeys = true
@@ -638,14 +639,23 @@ class ImportExportManager(private val context: Context, private val repository: 
                     } catch (_: Exception) {}
                 }
 
+                val overrideTargetId = if (restoreMode == RestoreMode.MERGE && payload.motorcycles.size == 1) {
+                    targetMotorcycleId
+                } else null
+
                 payload.motorcycles.forEach { backup ->
                     val m = backup.motorcycle
                     val existingBike = if (restoreMode == RestoreMode.MERGE) {
-                        repository.getMotorcycleById(m.id)
+                        if (overrideTargetId != null) {
+                            repository.getMotorcycleById(overrideTargetId) ?: repository.getMotorcycleById(m.id)
+                        } else {
+                            repository.getMotorcycleById(m.id)
+                        }
                     } else null
+                    val effectiveBikeId = existingBike?.id ?: overrideTargetId ?: m.id
 
                     val bikeEntity = MotorcycleEntity(
-                        id = m.id,
+                        id = effectiveBikeId,
                         name = m.name.ifBlank { "${m.make} ${m.model}".trim() },
                         make = m.make,
                         model = m.model,
@@ -697,9 +707,16 @@ class ImportExportManager(private val context: Context, private val repository: 
                         newTasksForBike = taskEntities.size
                     }
 
+                    val allBikesForLogs = repository.getAllMotorcycles().first()
+                    val otherBikesLogIds = allBikesForLogs
+                        .filter { it.id != bikeEntity.id }
+                        .flatMap { repository.getServiceLogsForMotorcycle(it.id) }
+                        .map { it.logId }
+                        .toSet()
+
                     val existingLogs = if (restoreMode == RestoreMode.MERGE) {
-                        repository.getServiceLogsForMotorcycle(bikeEntity.id)
-                    } else emptyList()
+                        repository.getServiceLogsForMotorcycle(bikeEntity.id).toMutableList()
+                    } else mutableListOf()
 
                     val logsToInsert = mutableListOf<ServiceLogEntity>()
                     backup.serviceLogs.forEach { log ->
@@ -714,25 +731,30 @@ class ImportExportManager(private val context: Context, private val repository: 
                         } else false
 
                         if (!isDuplicate) {
+                            val effectiveLogId = if (log.logId.isBlank() || log.logId in otherBikesLogIds) {
+                                UUID.randomUUID().toString()
+                            } else {
+                                log.logId
+                            }
                             val effectiveServicedKm = if (log.servicedAtKm > 0.0) log.servicedAtKm else log.odometerAtServiceKm
-                            logsToInsert.add(
-                                ServiceLogEntity(
-                                    logId = log.logId,
-                                    motorcycleId = bikeEntity.id,
-                                    taskId = log.taskId,
-                                    serviceTitle = log.serviceTitle,
-                                    locationOrShop = log.locationOrShop,
-                                    performedAtIsoDate = log.performedAtIsoDate,
-                                    odometerAtServiceKm = log.odometerAtServiceKm,
-                                    servicedAtKm = effectiveServicedKm,
-                                    limitKm = log.limitKm,
-                                    endKm = if (log.endKm > 0.0) log.endKm else effectiveServicedKm + log.limitKm,
-                                    costEur = log.costEur,
-                                    performedBy = log.performedBy,
-                                    notes = log.notes,
-                                    checklistItemsJson = log.checklistItemsJson
-                                )
+                            val serviceEntity = ServiceLogEntity(
+                                logId = effectiveLogId,
+                                motorcycleId = bikeEntity.id,
+                                taskId = log.taskId,
+                                serviceTitle = log.serviceTitle,
+                                locationOrShop = log.locationOrShop,
+                                performedAtIsoDate = log.performedAtIsoDate,
+                                odometerAtServiceKm = log.odometerAtServiceKm,
+                                servicedAtKm = effectiveServicedKm,
+                                limitKm = log.limitKm,
+                                endKm = if (log.endKm > 0.0) log.endKm else effectiveServicedKm + log.limitKm,
+                                costEur = log.costEur,
+                                performedBy = log.performedBy,
+                                notes = log.notes,
+                                checklistItemsJson = log.checklistItemsJson
                             )
+                            logsToInsert.add(serviceEntity)
+                            existingLogs.add(serviceEntity)
                         }
                     }
                     if (logsToInsert.isNotEmpty()) {
@@ -1146,8 +1168,17 @@ class ImportExportManager(private val context: Context, private val repository: 
         }
     }
 
+    private fun isSlovakLanguage(): Boolean {
+        return try {
+            TelemetryPreferences(context).appLanguageCode.equals("sk", ignoreCase = true)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun shareBikeServiceBookHtml(motorcycleId: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
+            val isSk = isSlovakLanguage()
             val motorcycles = repository.getAllMotorcycles().first()
             val bike = motorcycles.find { it.id == motorcycleId } ?: throw Exception("Bike not found")
             val services = repository.getServiceLogsForMotorcycle(motorcycleId).sortedByDescending { it.performedAtIsoDate }
@@ -1159,12 +1190,38 @@ class ImportExportManager(private val context: Context, private val repository: 
             val totalServiceCost = services.sumOf { it.costEur }
             val totalPartsCost = parts.sumOf { it.cost }
 
+            val docTitle = if (isSk) "Digitálna servisná knižka - ${bike.displayName}" else "Digital Service Book - ${bike.displayName}"
+            val mainHeading = if (isSk) "KURVE // DIGITÁLNA SERVISNÁ KNIŽKA" else "KURVE // DIGITAL SERVICE BOOK"
+            val totalOdoLabel = if (isSk) "Celkový nájazd" else "Total Odometer"
+            val summaryHeading = if (isSk) "Finančný a garážový prehľad" else "Financial & Garage Summary"
+            val totalServiceLabel = if (isSk) "Celkové náklady na servis:" else "Total Service Spend:"
+            val totalPartsLabel = if (isSk) "Celkové náklady na diely:" else "Total Parts Spend:"
+            val totalFuelSpendLabel = if (isSk) "Celkové náklady na palivo:" else "Total Fuel Spend:"
+            val totalFuelVolLabel = if (isSk) "Celkový objem paliva:" else "Total Fuel Volume:"
+            val serviceRecordsHeading = if (isSk) "Pravidelná údržba a servisné záznamy (${services.size})" else "Periodic Maintenance & Service Records (${services.size})"
+            val noServiceMsg = if (isSk) "Zatiaľ nie sú zaznamenané žiadne servisné záznamy." else "No service records logged yet."
+            val colDate = if (isSk) "Dátum" else "Date"
+            val colOdometer = if (isSk) "Nájazd" else "Odometer"
+            val colServiceItem = if (isSk) "Servisný úkon" else "Service Item"
+            val colLocation = if (isSk) "Miesto / Servis" else "Location/Shop"
+            val colCost = if (isSk) "Cena" else "Cost"
+            val partsHeading = if (isSk) "Namontované úpravy a náhradné diely (${parts.size})" else "Installed Modifications & Replacement Parts (${parts.size})"
+            val noPartsMsg = if (isSk) "Nie sú zaznamenané žiadne náhradné diely ani opravy." else "No aftermarket parts or repairs logged."
+            val colPartName = if (isSk) "Názov dielu" else "Part Name"
+            val colBrandPart = if (isSk) "Značka / Kód dielu" else "Brand / Part #"
+            val footerText = if (isSk) {
+                "Vygenerované aplikáciou KurveCounter MotoGeek Telemetry • Overený záznam garáže"
+            } else {
+                "Generated by KurveCounter MotoGeek Telemetry • Verified Garage Record"
+            }
+            val chooserTitle = if (isSk) "Zdieľať servisnú knižku" else "Share Service Book"
+
             val html = """
                 <!DOCTYPE html>
-                <html>
+                <html lang="${if (isSk) "sk" else "en"}">
                 <head>
                     <meta charset="UTF-8">
-                    <title>Digital Service Book - ${bike.displayName}</title>
+                    <title>$docTitle</title>
                     <style>
                         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #0b0e14; color: #e0e0e0; margin: 0; padding: 24px; }
                         .container { max-width: 800px; margin: 0 auto; background: #131822; padding: 32px; border-radius: 12px; border: 1px solid #2a3447; }
@@ -1181,7 +1238,7 @@ class ImportExportManager(private val context: Context, private val repository: 
                 </head>
                 <body>
                     <div class="container">
-                        <h1>KURVE // DIGITAL SERVICE BOOK</h1>
+                        <h1>$mainHeading</h1>
                         <div class="hero">
                             <div>
                                 <strong style="font-size: 18px; color: #fff;">${bike.displayName.uppercase()}</strong><br>
@@ -1189,27 +1246,27 @@ class ImportExportManager(private val context: Context, private val repository: 
                             </div>
                             <div style="text-align: right;">
                                 <div class="metric-value">${String.format("%,d", bike.totalOdometerKm.toInt())} KM</div>
-                                <span style="color: #999;">Total Odometer</span>
+                                <span style="color: #999;">$totalOdoLabel</span>
                             </div>
                         </div>
 
-                        <h2>Financial & Garage Summary</h2>
+                        <h2>$summaryHeading</h2>
                         <table>
                             <tr>
-                                <td><strong>Total Service Spend:</strong> ${totalServiceCost.toInt()} ${bike.currencySymbol}</td>
-                                <td><strong>Total Parts Spend:</strong> ${totalPartsCost.toInt()} ${bike.currencySymbol}</td>
+                                <td><strong>$totalServiceLabel</strong> ${totalServiceCost.toInt()} ${bike.currencySymbol}</td>
+                                <td><strong>$totalPartsLabel</strong> ${totalPartsCost.toInt()} ${bike.currencySymbol}</td>
                             </tr>
                             <tr>
-                                <td><strong>Total Fuel Spend:</strong> ${totalFuelCost.toInt()} ${bike.currencySymbol}</td>
-                                <td><strong>Total Fuel Volume:</strong> ${String.format("%.1f", totalFuelLiters)} L</td>
+                                <td><strong>$totalFuelSpendLabel</strong> ${totalFuelCost.toInt()} ${bike.currencySymbol}</td>
+                                <td><strong>$totalFuelVolLabel</strong> ${String.format("%.1f", totalFuelLiters)} L</td>
                             </tr>
                         </table>
 
-                        <h2>Periodic Maintenance & Service Records (${services.size})</h2>
-                        ${if (services.isEmpty()) "<p style='color: #888;'>No service records logged yet.</p>" else """
+                        <h2>$serviceRecordsHeading</h2>
+                        ${if (services.isEmpty()) "<p style='color: #888;'>$noServiceMsg</p>" else """
                         <table>
                             <thead>
-                                <tr><th>Date</th><th>Odometer</th><th>Service Item</th><th>Location/Shop</th><th>Cost</th></tr>
+                                <tr><th>$colDate</th><th>$colOdometer</th><th>$colServiceItem</th><th>$colLocation</th><th>$colCost</th></tr>
                             </thead>
                             <tbody>
                                 ${services.joinToString("") { s ->
@@ -1219,11 +1276,11 @@ class ImportExportManager(private val context: Context, private val repository: 
                         </table>
                         """}
 
-                        <h2>Installed Modifications & Replacement Parts (${parts.size})</h2>
-                        ${if (parts.isEmpty()) "<p style='color: #888;'>No aftermarket parts or repairs logged.</p>" else """
+                        <h2>$partsHeading</h2>
+                        ${if (parts.isEmpty()) "<p style='color: #888;'>$noPartsMsg</p>" else """
                         <table>
                             <thead>
-                                <tr><th>Date</th><th>Odometer</th><th>Part Name</th><th>Brand / Part #</th><th>Cost</th></tr>
+                                <tr><th>$colDate</th><th>$colOdometer</th><th>$colPartName</th><th>$colBrandPart</th><th>$colCost</th></tr>
                             </thead>
                             <tbody>
                                 ${parts.joinToString("") { p ->
@@ -1234,7 +1291,7 @@ class ImportExportManager(private val context: Context, private val repository: 
                         """}
 
                         <div class="footer">
-                            Generated by KurveCounter MotoGeek Telemetry • Verified Garage Record
+                            $footerText
                         </div>
                     </div>
                 </body>
@@ -1254,11 +1311,11 @@ class ImportExportManager(private val context: Context, private val repository: 
             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "text/html"
                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                putExtra(android.content.Intent.EXTRA_SUBJECT, "Digital Service Book - ${bike.displayName}")
+                putExtra(android.content.Intent.EXTRA_SUBJECT, docTitle)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(android.content.Intent.createChooser(intent, "Share Service Book").apply {
+            context.startActivity(android.content.Intent.createChooser(intent, chooserTitle).apply {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             })
 
@@ -1270,6 +1327,7 @@ class ImportExportManager(private val context: Context, private val repository: 
 
     suspend fun shareAllLogsCsv(motorcycleId: String): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
+            val isSk = isSlovakLanguage()
             val motorcycles = repository.getAllMotorcycles().first()
             val bike = motorcycles.find { it.id == motorcycleId } ?: throw Exception("Bike not found")
             val services = repository.getServiceLogsForMotorcycle(motorcycleId)
@@ -1299,14 +1357,17 @@ class ImportExportManager(private val context: Context, private val repository: 
                 file
             )
 
+            val subject = if (isSk) "Záznamy garáže CSV - ${bike.displayName}" else "Garage Logs CSV - ${bike.displayName}"
+            val chooserTitle = if (isSk) "Zdieľať záznamy CSV" else "Share Logs CSV"
+
             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                putExtra(android.content.Intent.EXTRA_SUBJECT, "Garage Logs CSV - ${bike.displayName}")
+                putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(android.content.Intent.createChooser(intent, "Share Logs CSV").apply {
+            context.startActivity(android.content.Intent.createChooser(intent, chooserTitle).apply {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             })
 
@@ -1318,6 +1379,7 @@ class ImportExportManager(private val context: Context, private val repository: 
 
     suspend fun shareRideGpx(rideId: Long): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
+            val isSk = isSlovakLanguage()
             val session = repository.getRideSessionById(rideId) ?: throw IllegalArgumentException("Ride session not found: $rideId")
             val trackPoints = repository.getTelemetryTrackPointsListForRide(rideId)
             val validPoints = GpxTelemetryCodec.filterValidTrackPoints(trackPoints)
@@ -1345,14 +1407,21 @@ class ImportExportManager(private val context: Context, private val repository: 
                 file
             )
 
+            val subject = if (isSk) {
+                "Jazda GPX - ${session.name ?: "Jazda #$rideId"}"
+            } else {
+                "Ride GPX - ${session.name ?: "Ride #$rideId"}"
+            }
+            val chooserTitle = if (isSk) "Zdieľať GPX trasu" else "Share GPX Track"
+
             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "application/gpx+xml"
                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                putExtra(android.content.Intent.EXTRA_SUBJECT, "Ride GPX - ${session.name ?: "Ride #$rideId"}")
+                putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val chooser = android.content.Intent.createChooser(intent, "Share GPX Track").apply {
+            val chooser = android.content.Intent.createChooser(intent, chooserTitle).apply {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -1367,6 +1436,7 @@ class ImportExportManager(private val context: Context, private val repository: 
 
     suspend fun shareRideGoProCsv(rideId: Long): Result<Unit> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         try {
+            val isSk = isSlovakLanguage()
             val trackPoints = repository.getTelemetryTrackPointsListForRide(rideId)
 
             val csvBuilder = StringBuilder()
@@ -1397,14 +1467,21 @@ class ImportExportManager(private val context: Context, private val repository: 
                 file
             )
 
+            val subject = if (isSk) {
+                "GoPro / Telemetria CSV - Jazda #$rideId"
+            } else {
+                "GoPro/Telemetry Overlay CSV - Ride #$rideId"
+            }
+            val chooserTitle = if (isSk) "Zdieľať GoPro telemetriu CSV" else "Share GoPro Telemetry CSV"
+
             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                putExtra(android.content.Intent.EXTRA_SUBJECT, "GoPro/Telemetry Overlay CSV - Ride #$rideId")
+                putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val chooser = android.content.Intent.createChooser(intent, "Share GoPro Telemetry CSV").apply {
+            val chooser = android.content.Intent.createChooser(intent, chooserTitle).apply {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {

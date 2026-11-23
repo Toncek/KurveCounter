@@ -362,6 +362,38 @@ object MotorcycleTemplateCatalog {
     }
 
 
+    private val mt09Specs = TechnicalSpecsDto(
+        oilCapacityLiters = 3.2,
+        oilCapacityNoFilterLiters = 2.8,
+        oilViscosityAndSpec = "10W-40 Yamalube JASO MA2",
+        coolantCapacityLiters = 1.9,
+        coolantType = "Ethylene Glycol 50/50",
+        brakeFluidType = "DOT 4",
+        brakeFluidVolumeMl = 300,
+        forkOilCapacityPerLegMl = 490.0,
+        forkOilWeight = "SAE 10W",
+        valveClearanceIntakeMm = "0.11-0.20",
+        valveClearanceExhaustMm = "0.26-0.30",
+        sparkPlugModel = "NGK LMAR9A-9",
+        sparkPlugGapMm = "0.8-0.9",
+        frontTireSize = "120/70 ZR17",
+        rearTireSize = "180/55 ZR17",
+        frontTirePressurePsi = 36.0,
+        rearTirePressurePsi = 42.0,
+        chainSlackMm = "25-35",
+        rearAxleNutTorqueNm = 105.0,
+        frontAxleTorqueNm = 65.0,
+        frontPinchBoltsTorqueNm = 23.0,
+        oilDrainPlugTorqueNm = 43.0,
+        oilFilterTorqueNm = 17.0,
+        frontCaliperBoltsTorqueNm = 35.0,
+        rearCaliperBoltsTorqueNm = 27.0,
+        brakeBleedNippleTorqueNm = 6.0,
+        sparkPlugTorqueNm = 13.0,
+        waterPumpDrainBoltTorqueNm = 10.0,
+        cylinderDrainBoltTorqueNm = 10.0
+    )
+
     val mt09 = MotorcycleBackupDto(
         motorcycle = MotorcycleDto(
             id = "template_mt09",
@@ -374,45 +406,41 @@ object MotorcycleTemplateCatalog {
             manualAdjustmentOffsetKm = 0.0,
             isActive = true
         ),
-        technicalSpecs = TechnicalSpecsDto(
-            oilCapacityLiters = 3.2,
-            oilCapacityNoFilterLiters = 2.8,
-            oilViscosityAndSpec = "10W-40 Yamalube JASO MA2",
-            coolantCapacityLiters = 1.9,
-            coolantType = "Ethylene Glycol 50/50",
-            brakeFluidType = "DOT 4",
-            brakeFluidVolumeMl = 300,
-            valveClearanceIntakeMm = "0.11-0.20",
-            valveClearanceExhaustMm = "0.26-0.30",
-            sparkPlugModel = "NGK LMAR9A-9",
-            sparkPlugGapMm = "0.8-0.9",
-            frontTireSize = "120/70 ZR17",
-            rearTireSize = "180/55 ZR17",
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 105.0,
-            frontAxleTorqueNm = 65.0,
-            frontPinchBoltsTorqueNm = 23.0,
-            oilDrainPlugTorqueNm = 43.0,
-            oilFilterTorqueNm = 17.0,
-            frontCaliperBoltsTorqueNm = 35.0,
-            rearCaliperBoltsTorqueNm = 27.0,
-            brakeBleedNippleTorqueNm = 6.0,
-            sparkPlugTorqueNm = 13.0,
-            waterPumpDrainBoltTorqueNm = 10.0,
-            cylinderDrainBoltTorqueNm = 10.0
-        ),
-        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
-            oilCapacityLiters = 3.2,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 105.0,
-            oilDrainPlugTorqueNm = 43.0,
-            frontCaliperBoltsTorqueNm = 35.0
-        )),
+        technicalSpecs = mt09Specs,
+        maintenanceSchedule = buildStandardMaintenanceTasks(mt09Specs),
         serviceLogs = emptyList()
+    )
+
+    private val cb650rSpecs = TechnicalSpecsDto(
+        oilCapacityLiters = 2.6,
+        oilCapacityNoFilterLiters = 2.3,
+        oilViscosityAndSpec = "10W-30 Honda Pro GN4 JASO MA",
+        coolantCapacityLiters = 1.9,
+        coolantType = "Ethylene Glycol 50/50",
+        brakeFluidType = "DOT 4",
+        brakeFluidVolumeMl = 300,
+        forkOilCapacityPerLegMl = 456.0,
+        forkOilWeight = "SAE 10W",
+        valveClearanceIntakeMm = "0.13-0.19",
+        valveClearanceExhaustMm = "0.24-0.30",
+        sparkPlugModel = "NGK CR9EH-9",
+        sparkPlugGapMm = "0.8-0.9",
+        frontTireSize = "120/70 ZR17",
+        rearTireSize = "180/55 ZR17",
+        frontTirePressurePsi = 36.0,
+        rearTirePressurePsi = 42.0,
+        chainSlackMm = "25-35",
+        rearAxleNutTorqueNm = 98.0,
+        frontAxleTorqueNm = 59.0,
+        frontPinchBoltsTorqueNm = 22.0,
+        oilDrainPlugTorqueNm = 30.0,
+        oilFilterTorqueNm = 26.0,
+        frontCaliperBoltsTorqueNm = 30.0,
+        rearCaliperBoltsTorqueNm = 27.0,
+        brakeBleedNippleTorqueNm = 6.0,
+        sparkPlugTorqueNm = 16.0,
+        waterPumpDrainBoltTorqueNm = 13.0,
+        cylinderDrainBoltTorqueNm = 10.0
     )
 
     val cb650r = MotorcycleBackupDto(
@@ -427,25 +455,41 @@ object MotorcycleTemplateCatalog {
             manualAdjustmentOffsetKm = 0.0,
             isActive = true
         ),
-        technicalSpecs = TechnicalSpecsDto(
-            oilCapacityLiters = 2.6,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 98.0,
-            oilDrainPlugTorqueNm = 30.0,
-            frontCaliperBoltsTorqueNm = 30.0
-        ),
-        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
-            oilCapacityLiters = 2.6,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 98.0,
-            oilDrainPlugTorqueNm = 30.0,
-            frontCaliperBoltsTorqueNm = 30.0
-        )),
+        technicalSpecs = cb650rSpecs,
+        maintenanceSchedule = buildStandardMaintenanceTasks(cb650rSpecs),
         serviceLogs = emptyList()
+    )
+
+    private val r1250gsSpecs = TechnicalSpecsDto(
+        oilCapacityLiters = 4.0,
+        oilCapacityNoFilterLiters = 3.6,
+        oilViscosityAndSpec = "5W-40 BMW Advantec Pro JASO MA2",
+        coolantCapacityLiters = 1.6,
+        coolantType = "Ethylene Glycol 50/50",
+        brakeFluidType = "DOT 4 LV",
+        brakeFluidVolumeMl = 350,
+        forkOilCapacityPerLegMl = 620.0,
+        forkOilWeight = "SAE 7.5W",
+        valveClearanceIntakeMm = "0.10-0.17",
+        valveClearanceExhaustMm = "0.34-0.41",
+        sparkPlugModel = "NGK LMAR8AI-10",
+        sparkPlugGapMm = "0.9-1.0",
+        frontTireSize = "120/70 R19",
+        rearTireSize = "170/60 R17",
+        frontTirePressurePsi = 36.0,
+        rearTirePressurePsi = 42.0,
+        chainSlackMm = "Shaft Drive",
+        rearAxleNutTorqueNm = 60.0,
+        frontAxleTorqueNm = 50.0,
+        frontPinchBoltsTorqueNm = 19.0,
+        oilDrainPlugTorqueNm = 42.0,
+        oilFilterTorqueNm = 11.0,
+        frontCaliperBoltsTorqueNm = 38.0,
+        rearCaliperBoltsTorqueNm = 24.0,
+        brakeBleedNippleTorqueNm = 7.0,
+        sparkPlugTorqueNm = 12.0,
+        waterPumpDrainBoltTorqueNm = 10.0,
+        cylinderDrainBoltTorqueNm = 10.0
     )
 
     val r1250gs = MotorcycleBackupDto(
@@ -460,25 +504,41 @@ object MotorcycleTemplateCatalog {
             manualAdjustmentOffsetKm = 0.0,
             isActive = true
         ),
-        technicalSpecs = TechnicalSpecsDto(
-            oilCapacityLiters = 4.0,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "Shaft Drive",
-            rearAxleNutTorqueNm = 60.0,
-            oilDrainPlugTorqueNm = 42.0,
-            frontCaliperBoltsTorqueNm = 38.0
-        ),
-        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
-            oilCapacityLiters = 4.0,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "Shaft Drive",
-            rearAxleNutTorqueNm = 60.0,
-            oilDrainPlugTorqueNm = 42.0,
-            frontCaliperBoltsTorqueNm = 38.0
-        )),
+        technicalSpecs = r1250gsSpecs,
+        maintenanceSchedule = buildStandardMaintenanceTasks(r1250gsSpecs),
         serviceLogs = emptyList()
+    )
+
+    private val ktm890Specs = TechnicalSpecsDto(
+        oilCapacityLiters = 2.8,
+        oilCapacityNoFilterLiters = 2.5,
+        oilViscosityAndSpec = "10W-50 Motorex Power Synt JASO MA2",
+        coolantCapacityLiters = 1.6,
+        coolantType = "Motorex M3.0 Ethylene Glycol 50/50",
+        brakeFluidType = "DOT 4",
+        brakeFluidVolumeMl = 300,
+        forkOilCapacityPerLegMl = 490.0,
+        forkOilWeight = "WP SAE 4W",
+        valveClearanceIntakeMm = "0.10-0.15",
+        valveClearanceExhaustMm = "0.20-0.25",
+        sparkPlugModel = "NGK LKAR8AI-9",
+        sparkPlugGapMm = "0.8-0.9",
+        frontTireSize = "120/70 ZR17",
+        rearTireSize = "180/55 ZR17",
+        frontTirePressurePsi = 34.0,
+        rearTirePressurePsi = 40.0,
+        chainSlackMm = "2-5 (Swingarm)",
+        rearAxleNutTorqueNm = 90.0,
+        frontAxleTorqueNm = 45.0,
+        frontPinchBoltsTorqueNm = 15.0,
+        oilDrainPlugTorqueNm = 20.0,
+        oilFilterTorqueNm = 15.0,
+        frontCaliperBoltsTorqueNm = 45.0,
+        rearCaliperBoltsTorqueNm = 25.0,
+        brakeBleedNippleTorqueNm = 8.0,
+        sparkPlugTorqueNm = 11.0,
+        waterPumpDrainBoltTorqueNm = 10.0,
+        cylinderDrainBoltTorqueNm = 10.0
     )
 
     val ktm890 = MotorcycleBackupDto(
@@ -493,25 +553,41 @@ object MotorcycleTemplateCatalog {
             manualAdjustmentOffsetKm = 0.0,
             isActive = true
         ),
-        technicalSpecs = TechnicalSpecsDto(
-            oilCapacityLiters = 2.8,
-            frontTirePressurePsi = 34.0,
-            rearTirePressurePsi = 40.0,
-            chainSlackMm = "2-5 (Swingarm)",
-            rearAxleNutTorqueNm = 90.0,
-            oilDrainPlugTorqueNm = 20.0,
-            frontCaliperBoltsTorqueNm = 45.0
-        ),
-        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
-            oilCapacityLiters = 2.8,
-            frontTirePressurePsi = 34.0,
-            rearTirePressurePsi = 40.0,
-            chainSlackMm = "2-5 (Swingarm)",
-            rearAxleNutTorqueNm = 90.0,
-            oilDrainPlugTorqueNm = 20.0,
-            frontCaliperBoltsTorqueNm = 45.0
-        )),
+        technicalSpecs = ktm890Specs,
+        maintenanceSchedule = buildStandardMaintenanceTasks(ktm890Specs),
         serviceLogs = emptyList()
+    )
+
+    private val z900Specs = TechnicalSpecsDto(
+        oilCapacityLiters = 3.6,
+        oilCapacityNoFilterLiters = 3.3,
+        oilViscosityAndSpec = "10W-40 Kawasaki Vent Vert JASO MA2",
+        coolantCapacityLiters = 2.4,
+        coolantType = "Ethylene Glycol 50/50",
+        brakeFluidType = "DOT 4",
+        brakeFluidVolumeMl = 300,
+        forkOilCapacityPerLegMl = 435.0,
+        forkOilWeight = "SAE 10W",
+        valveClearanceIntakeMm = "0.15-0.24",
+        valveClearanceExhaustMm = "0.22-0.31",
+        sparkPlugModel = "NGK CR9EIA-9",
+        sparkPlugGapMm = "0.8-0.9",
+        frontTireSize = "120/70 ZR17",
+        rearTireSize = "180/55 ZR17",
+        frontTirePressurePsi = 36.0,
+        rearTirePressurePsi = 42.0,
+        chainSlackMm = "25-35",
+        rearAxleNutTorqueNm = 108.0,
+        frontAxleTorqueNm = 108.0,
+        frontPinchBoltsTorqueNm = 20.0,
+        oilDrainPlugTorqueNm = 29.0,
+        oilFilterTorqueNm = 17.5,
+        frontCaliperBoltsTorqueNm = 34.0,
+        rearCaliperBoltsTorqueNm = 25.0,
+        brakeBleedNippleTorqueNm = 7.8,
+        sparkPlugTorqueNm = 13.0,
+        waterPumpDrainBoltTorqueNm = 10.0,
+        cylinderDrainBoltTorqueNm = 10.0
     )
 
     val z900 = MotorcycleBackupDto(
@@ -526,25 +602,41 @@ object MotorcycleTemplateCatalog {
             manualAdjustmentOffsetKm = 0.0,
             isActive = true
         ),
-        technicalSpecs = TechnicalSpecsDto(
-            oilCapacityLiters = 3.6,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 108.0,
-            oilDrainPlugTorqueNm = 29.0,
-            frontCaliperBoltsTorqueNm = 34.0
-        ),
-        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
-            oilCapacityLiters = 3.6,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 108.0,
-            oilDrainPlugTorqueNm = 29.0,
-            frontCaliperBoltsTorqueNm = 34.0
-        )),
+        technicalSpecs = z900Specs,
+        maintenanceSchedule = buildStandardMaintenanceTasks(z900Specs),
         serviceLogs = emptyList()
+    )
+
+    private val universalSpecs = TechnicalSpecsDto(
+        oilCapacityLiters = 3.0,
+        oilCapacityNoFilterLiters = 2.7,
+        oilViscosityAndSpec = "10W-40 Synthetic JASO MA2",
+        coolantCapacityLiters = 1.8,
+        coolantType = "Ethylene Glycol 50/50",
+        brakeFluidType = "DOT 4",
+        brakeFluidVolumeMl = 300,
+        forkOilCapacityPerLegMl = 450.0,
+        forkOilWeight = "SAE 10W",
+        valveClearanceIntakeMm = "0.10-0.20",
+        valveClearanceExhaustMm = "0.20-0.30",
+        sparkPlugModel = "NGK CR9EIA-9",
+        sparkPlugGapMm = "0.8-0.9",
+        frontTireSize = "120/70 ZR17",
+        rearTireSize = "180/55 ZR17",
+        frontTirePressurePsi = 36.0,
+        rearTirePressurePsi = 42.0,
+        chainSlackMm = "25-35",
+        rearAxleNutTorqueNm = 100.0,
+        frontAxleTorqueNm = 65.0,
+        frontPinchBoltsTorqueNm = 20.0,
+        oilDrainPlugTorqueNm = 30.0,
+        oilFilterTorqueNm = 17.0,
+        frontCaliperBoltsTorqueNm = 35.0,
+        rearCaliperBoltsTorqueNm = 27.0,
+        brakeBleedNippleTorqueNm = 8.0,
+        sparkPlugTorqueNm = 13.0,
+        waterPumpDrainBoltTorqueNm = 10.0,
+        cylinderDrainBoltTorqueNm = 10.0
     )
 
     val universal = MotorcycleBackupDto(
@@ -559,24 +651,8 @@ object MotorcycleTemplateCatalog {
             manualAdjustmentOffsetKm = 0.0,
             isActive = true
         ),
-        technicalSpecs = TechnicalSpecsDto(
-            oilCapacityLiters = 3.0,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 100.0,
-            oilDrainPlugTorqueNm = 30.0,
-            frontCaliperBoltsTorqueNm = 35.0
-        ),
-        maintenanceSchedule = buildStandardMaintenanceTasks(TechnicalSpecsDto(
-            oilCapacityLiters = 3.0,
-            frontTirePressurePsi = 36.0,
-            rearTirePressurePsi = 42.0,
-            chainSlackMm = "25-35",
-            rearAxleNutTorqueNm = 100.0,
-            oilDrainPlugTorqueNm = 30.0,
-            frontCaliperBoltsTorqueNm = 35.0
-        )),
+        technicalSpecs = universalSpecs,
+        maintenanceSchedule = buildStandardMaintenanceTasks(universalSpecs),
         serviceLogs = emptyList()
     )
 
