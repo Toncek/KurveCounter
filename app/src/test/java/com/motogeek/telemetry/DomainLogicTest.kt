@@ -13,6 +13,7 @@ import com.motogeek.telemetry.domain.dsp.PocketModeCalibrator
 import com.motogeek.telemetry.domain.dsp.CalibrationState
 import com.motogeek.telemetry.domain.dsp.MotorcycleSensorFusionEngine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -458,5 +459,99 @@ class DomainLogicTest {
             engine.processImu(tsNanos, 0.0, 0.0, 9.80665, 0.8, 0.8, 0.0, wallClockMs = wallMs)
         }
         assertTrue(engine.peakRollRateDegPerSec > 0.0)
+    }
+
+    @Test
+    fun testAutoStartOver20KmhThreshold() {
+        val engine = MotorcycleSensorFusionEngine { }
+        assertEquals(20.0, MotorcycleSensorFusionEngine.AUTO_START_SPEED_KMH, 0.001)
+
+        val belowOrAtThreshold = listOf(0.0, 5.0, 12.0, 19.9, 20.0)
+        for (speed in belowOrAtThreshold) {
+            assertFalse(
+                "Speed $speed km/h must NOT trigger auto-start",
+                engine.evaluateAutoStart(isRiding = false, autoStartEnabled = true, speedKmh = speed)
+            )
+            assertFalse(
+                engine.evaluateAutoStart(isRiding = true, autoStartEnabled = true, speedKmh = speed)
+            )
+            assertFalse(
+                engine.evaluateAutoStart(isRiding = false, autoStartEnabled = false, speedKmh = speed)
+            )
+        }
+
+        val aboveThreshold = listOf(20.1, 45.0)
+        for (speed in aboveThreshold) {
+            assertTrue(
+                "Speed $speed km/h must trigger auto-start when idle and enabled",
+                engine.evaluateAutoStart(isRiding = false, autoStartEnabled = true, speedKmh = speed)
+            )
+            assertFalse(
+                "Speed $speed km/h must NOT trigger auto-start when already riding",
+                engine.evaluateAutoStart(isRiding = true, autoStartEnabled = true, speedKmh = speed)
+            )
+            assertFalse(
+                "Speed $speed km/h must NOT trigger auto-start when autoStartEnabled is false",
+                engine.evaluateAutoStart(isRiding = false, autoStartEnabled = false, speedKmh = speed)
+            )
+        }
+    }
+
+    @Test
+    fun testAutoStopAfter5MinutesNotOver5Kmh() {
+        assertEquals(5.0, MotorcycleSensorFusionEngine.AUTO_STOP_MAX_SPEED_KMH, 0.001)
+        assertEquals(300_000L, MotorcycleSensorFusionEngine.AUTO_STOP_DURATION_MS)
+
+        val engine = MotorcycleSensorFusionEngine { }
+        val nowMs = 1_000_000L
+
+        // Riding at 60 km/h keeps auto-stop untriggered
+        engine.processGps(nowMs, 60.0 / 3.6, true, 0.0, true, 48.1486, 17.1077)
+        assertFalse(engine.isAutoStopTriggered)
+        assertEquals(0L, engine.lowSpeedStartTimeMs)
+
+        // Drop to <= 5.0 km/h (5.0 km/h) -> starts timer, stays false until 5m (300,000 ms)
+        val stopStartMs = nowMs + 1_000L
+        engine.processGps(stopStartMs, 5.0 / 3.6, true, 0.0, true, 48.1486, 17.1077)
+        assertFalse(engine.isAutoStopTriggered)
+        assertEquals(stopStartMs, engine.lowSpeedStartTimeMs)
+
+        // 1 minute at <= 5.0 km/h -> false
+        engine.processGps(stopStartMs + 60_000L, 3.0 / 3.6, true, 0.0, true, 48.1486, 17.1077)
+        assertFalse(engine.isAutoStopTriggered)
+
+        // 4 minutes at <= 5.0 km/h -> false
+        engine.processGps(stopStartMs + 240_000L, 0.0, true, 0.0, true, 48.1486, 17.1077)
+        assertFalse(engine.isAutoStopTriggered)
+
+        // 4m 59.999s -> still false
+        engine.processGps(stopStartMs + 299_999L, 5.0 / 3.6, true, 0.0, true, 48.1486, 17.1077)
+        assertFalse(engine.isAutoStopTriggered)
+
+        // 5m (300,000 ms) -> triggers true
+        engine.processGps(stopStartMs + 300_000L, 5.0 / 3.6, true, 0.0, true, 48.1486, 17.1077)
+        assertTrue(engine.isAutoStopTriggered)
+
+        // Timer reset check: rising to 5.5 km/h before 5m clears timer and requires full 5m again
+        engine.reset()
+        val secondStopMs = 2_000_000L
+        assertFalse(engine.checkAutoStopTimeout(secondStopMs, 4.5))
+        assertEquals(secondStopMs, engine.lowSpeedStartTimeMs)
+        assertFalse(engine.checkAutoStopTimeout(secondStopMs + 240_000L, 5.0))
+        assertFalse(engine.isAutoStopTriggered)
+
+        // Speed rises to 5.5 km/h (> 5.0) before 5m -> resets timer
+        assertFalse(engine.checkAutoStopTimeout(secondStopMs + 250_000L, 5.5))
+        assertEquals(0L, engine.lowSpeedStartTimeMs)
+        assertFalse(engine.isAutoStopTriggered)
+
+        // Dropping back to <= 5.0 km/h restarts the 5-minute countdown
+        val restartedStopMs = secondStopMs + 260_000L
+        assertFalse(engine.checkAutoStopTimeout(restartedStopMs, 2.0))
+        assertEquals(restartedStopMs, engine.lowSpeedStartTimeMs)
+        assertFalse(engine.checkAutoStopTimeout(restartedStopMs + 299_999L, 5.0))
+        assertFalse(engine.isAutoStopTriggered)
+        assertTrue(engine.checkAutoStopTimeout(restartedStopMs + 300_000L, 5.0))
+        assertTrue(engine.isAutoStopTriggered)
     }
 }

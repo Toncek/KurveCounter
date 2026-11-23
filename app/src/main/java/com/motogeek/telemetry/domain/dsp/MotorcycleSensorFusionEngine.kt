@@ -47,6 +47,10 @@ class MotorcycleSensorFusionEngine(
     private var lastStopStartTimeMs: Long = 0
     var isAutoPaused = false
         private set
+    var lowSpeedStartTimeMs: Long = 0L
+        private set
+    var isAutoStopTriggered: Boolean = false
+        private set
     private var cornerStartTimeMs = 0L
     private var cornerMaxLean = 0.0
     private var cornerEntrySpeed = 0.0
@@ -173,6 +177,7 @@ class MotorcycleSensorFusionEngine(
             lastStopStartTimeMs = 0L
             isAutoPaused = false
         }
+        checkAutoStopTimeout(timestampMs, currentSpeedKmh)
 
         var finalYawRateDegSec = 0.0
         if (hasBearing && bearingDeg.isFinite()) {
@@ -323,6 +328,32 @@ class MotorcycleSensorFusionEngine(
         }
     }
     
+    fun evaluateAutoStart(
+        isRiding: Boolean,
+        autoStartEnabled: Boolean,
+        speedKmh: Double = currentSpeedKmh
+    ): Boolean = !isRiding && autoStartEnabled && speedKmh.isFinite() && speedKmh > AUTO_START_SPEED_KMH
+
+    fun checkAutoStopTimeout(
+        nowMs: Long,
+        speedKmh: Double = currentSpeedKmh,
+        timeoutMs: Long = AUTO_STOP_DURATION_MS
+    ): Boolean {
+        if (!speedKmh.isFinite() || speedKmh > AUTO_STOP_MAX_SPEED_KMH) {
+            lowSpeedStartTimeMs = 0L
+            isAutoStopTriggered = false
+            return false
+        }
+        if (lowSpeedStartTimeMs <= 0L) {
+            lowSpeedStartTimeMs = nowMs
+        }
+        if (nowMs - lowSpeedStartTimeMs >= timeoutMs) {
+            isAutoStopTriggered = true
+            return true
+        }
+        return false
+    }
+
     fun reset() {
         accelFilter.reset()
         gyroFilter.reset()
@@ -348,6 +379,8 @@ class MotorcycleSensorFusionEngine(
         cornerState = CornerState.STRAIGHT
         isAutoPaused = false
         lastStopStartTimeMs = 0L
+        lowSpeedStartTimeMs = 0L
+        isAutoStopTriggered = false
         cornerApexLat = 0.0
         cornerApexLon = 0.0
         
@@ -355,5 +388,11 @@ class MotorcycleSensorFusionEngine(
         lastGpsSpeedMs = 0.0
         lastGpsBearingDeg = null
         lastImuTimestampNanos = 0L
+    }
+
+    companion object {
+        const val AUTO_START_SPEED_KMH = 20.0
+        const val AUTO_STOP_MAX_SPEED_KMH = 5.0
+        const val AUTO_STOP_DURATION_MS = 5 * 60 * 1000L
     }
 }

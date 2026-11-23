@@ -99,6 +99,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
 
     private var isMonitoringStandby = false
     private var manualLeanOffsetDeg = 0.0
+    private var lastSpeedAbove5KmhMs: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -215,6 +216,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         if (_state.value.isRiding) return
         motorcycleId = bikeId
         startTimeMs = System.currentTimeMillis()
+        lastSpeedAbove5KmhMs = startTimeMs
         activeRideId = 0L
 
         if (!isMonitoringStandby) {
@@ -354,7 +356,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         )
         val title = if (isSk) "MotoGeek Telemetria aktívna" else "MotoGeek Telemetry Active"
         val body = if (isStandby) {
-            if (isSk) "Pohotovosť: Auto-štart > 5 km/h" else "Standby: Auto-start > 5 km/h"
+            if (isSk) "Pohotovosť: Auto-štart > 20 km/h • Auto-stop 5m ≤ 5 km/h" else "Standby: Auto-start > 20 km/h • Auto-stop 5m ≤ 5 km/h"
         } else {
             if (isSk) "Zaznamenáva sa živá telemetria..." else "Recording live telemetry..."
         }
@@ -479,8 +481,18 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         fusionEngine.processLocation(location)
 
         val speedKmh = if (location.hasSpeed()) (location.speed * 3.6).toDouble() else fusionEngine.currentSpeedKmh
-        if (!_state.value.isRiding && TelemetryPreferences(this).autoStartAbove5Kmh && speedKmh > 5.0) {
+        if (!_state.value.isRiding && TelemetryPreferences(this).autoStartAbove5Kmh && speedKmh > AUTO_START_SPEED_THRESHOLD_KMH) {
             startRide(motorcycleId)
+        }
+
+        if (_state.value.isRiding && !isPaused) {
+            val nowMs = System.currentTimeMillis()
+            if (speedKmh > AUTO_STOP_SPEED_THRESHOLD_KMH) {
+                lastSpeedAbove5KmhMs = nowMs
+            } else if (lastSpeedAbove5KmhMs > 0L && (nowMs - lastSpeedAbove5KmhMs) >= AUTO_STOP_TIMEOUT_MS) {
+                stopRide(autoStopped = true)
+                return
+            }
         }
 
         if (_state.value.isRiding && isValidFix) {
@@ -568,6 +580,16 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
     }
 
     private fun updateState() {
+        if (_state.value.isRiding && !isPaused) {
+            val nowMs = System.currentTimeMillis()
+            if (fusionEngine.currentSpeedKmh > AUTO_STOP_SPEED_THRESHOLD_KMH) {
+                lastSpeedAbove5KmhMs = nowMs
+            } else if (lastSpeedAbove5KmhMs > 0L && (nowMs - lastSpeedAbove5KmhMs) >= AUTO_STOP_TIMEOUT_MS) {
+                stopRide(autoStopped = true)
+                return
+            }
+        }
+
         val lean = fusionEngine.currentLeanAngleDeg.coerceIn(-70.0, 70.0)
         
         if (lean > 0) maxLeanRight = max(maxLeanRight, lean)
@@ -692,6 +714,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         if (isPaused) {
             isPaused = false
             timePausedMs += System.currentTimeMillis() - pauseStartTimeMs
+            lastSpeedAbove5KmhMs = System.currentTimeMillis()
             lastLocation = null // prevent bad distance jump
             _state.update { it.copy(isPaused = false) }
         }
@@ -718,7 +741,7 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         }
     }
 
-    private fun stopRide() {
+    private fun stopRide(autoStopped: Boolean = false) {
         if (!_state.value.isRiding) return
 
         if (isPaused) {
@@ -793,10 +816,19 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
 
             val isSk = TelemetryPreferences(this@TelemetryForegroundService).appLanguageCode.equals("sk", ignoreCase = true)
             val distFormatted = String.format("%.1f", accumulatedDistanceKm)
+            val rideTitle = if (autoStopped) {
+                if (isSk) {
+                    "Jazda automaticky ukončená ($distFormatted km • 5 min ≤ 5 km/h)"
+                } else {
+                    "Ride Auto-Stopped ($distFormatted km • 5 min ≤ 5 km/h)"
+                }
+            } else {
+                if (isSk) "Jazda zaznamenaná ($distFormatted km)" else "Ride Recorded ($distFormatted km)"
+            }
             repository.logActivity(
                 motorcycleId = motorcycleId,
                 category = "RIDE",
-                title = if (isSk) "Jazda zaznamenaná ($distFormatted km)" else "Ride Recorded ($distFormatted km)",
+                title = rideTitle,
                 details = if (isSk) {
                     "Max náklon: ${maxLeanLeft.toInt()}°Ľ / ${maxLeanRight.toInt()}°P • ${fusionEngine.totalCorners} zákrut • Štýl: $badge"
                 } else {
@@ -810,8 +842,14 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
                 wakeLock.release()
             }
 
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (autoStopped && TelemetryPreferences(this@TelemetryForegroundService).autoStartAbove5Kmh) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    startMonitoringStandby()
+                }
+            } else {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
@@ -830,6 +868,10 @@ class TelemetryForegroundService : LifecycleService(), SensorEventListener {
         const val ACTION_RESUME_RIDE = "ACTION_RESUME_RIDE"
         const val ACTION_STOP_RIDE = "ACTION_STOP_RIDE"
         const val EXTRA_MOTORCYCLE_ID = "EXTRA_MOTORCYCLE_ID"
+
+        const val AUTO_START_SPEED_THRESHOLD_KMH = 20.0
+        const val AUTO_STOP_SPEED_THRESHOLD_KMH = 5.0
+        const val AUTO_STOP_TIMEOUT_MS = 5 * 60 * 1000L
 
         private const val CHANNEL_ID = "telemetry_channel"
         private const val NOTIF_ID = 1001

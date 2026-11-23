@@ -10,6 +10,12 @@ class TelemetryPreferences(context: Context) {
         get() = prefs.getBoolean("autoStartAbove5Kmh", true)
         set(value) = prefs.edit().putBoolean("autoStartAbove5Kmh", value).apply()
 
+    var autoStartAbove20Kmh: Boolean
+        get() = autoStartAbove5Kmh
+        set(value) {
+            autoStartAbove5Kmh = value
+        }
+
     var startOnBoot: Boolean
         get() = prefs.getBoolean("startOnBoot", false)
         set(value) = prefs.edit().putBoolean("startOnBoot", value).apply()

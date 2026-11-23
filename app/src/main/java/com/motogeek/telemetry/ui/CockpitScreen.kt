@@ -134,7 +134,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                             prefs.autoStartAbove5Kmh = !prefs.autoStartAbove5Kmh
                             sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_SYNC_PREFS)
                         },
-                        label = { Text(tr("Auto-Start > 5 km/h", "Auto-Štart > 5 km/h"), fontSize = 11.sp) }
+                        label = { Text(tr("Auto-Start > 20 km/h (Stop 5m ≤ 5)", "Auto-Štart > 20 km/h (Stop 5m ≤ 5)"), fontSize = 11.sp) }
                     )
                     FilterChip(
                         selected = telemetryState.startOnBoot,
@@ -444,7 +444,7 @@ fun CockpitScreen(viewModel: MainViewModel, onStartRide: () -> Unit, onStopRide:
                             prefs.autoStartAbove5Kmh = !prefs.autoStartAbove5Kmh
                             sendTelemetryServiceAction(context, TelemetryForegroundService.ACTION_SYNC_PREFS)
                         },
-                        label = { Text(tr("Auto-Start > 5 km/h", "Auto-Štart > 5 km/h")) }
+                        label = { Text(tr("Auto-Start > 20 km/h (Stop 5m ≤ 5)", "Auto-Štart > 20 km/h (Stop 5m ≤ 5)")) }
                     )
                     FilterChip(
                         selected = telemetryState.startOnBoot,
