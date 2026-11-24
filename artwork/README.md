@@ -7,6 +7,7 @@ Runtime assets:
 - `../app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png`: 432 px adaptive foreground (108 dp), with transparent padding for launcher masks.
 - `../app/src/main/res/drawable-xxxhdpi/splash_logo.png`: 1152 px launch logo (288 dp), with visible artwork inside Android's central 192 dp circle.
 - `../app/src/main/res/values/colors.xml`: charcoal background, `#0B0E14`.
+- `play_store_feature_graphic.png`: 1024×500 Google Play Store feature graphic generated locally via `vega64-img` (dark `#0B0E14` motorsport telemetry banner with `#FF5F1F` orange and `#00E5FF` cyan accents).
 
 The AndroidX SplashScreen integration displays the same artwork on Android 10 and later, without a separate splash activity or artificial startup delay. Version 1.0.1 is used to match the project's existing Kotlin and AndroidX toolchain.
 
