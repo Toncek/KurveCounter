@@ -72,3 +72,7 @@ Welcome, Codex or Antigravity. You are working on **MotoGeekTelemetry**, a nativ
 2. **Math & Canvas Safety**: Guard all divisions, `sqrt`, and trig in `MotorcycleSensorFusionEngine` / `BiquadButterworthFilter` and `Canvas` drawing against `NaN`/`Infinity` (`result.takeIf { it.isFinite() } ?: 0.0`) and `coerceIn(...)`.
 3. **Odometer & AI Maintenance**: Preserve monotonic odometer updates + manual adjustments, categorize service intervals (`OK`, `DUE_SOON`, `OVERDUE`), and parse LLM-imported service manual JSONs (torques in Nm, fluid capacities) resiliently.
 4. **Testing**: Verify sensor math, filters, repositories, and JSON parsers via `./gradlew testDebugUnitTest`.
+
+## Local Image Generation (`vega64_generate_image` / `vega64-img`)
+- Generate motorcycle telemetry visuals, launcher/garage icons, and Play Store graphics locally via the `vega64_generate_image` MCP tool or `~/.local/bin/vega64-img` (SDXL Lightning 4-step with `--vae-tiling`; auto-pauses/restarts `vega64-llm.service`).
+- Target a dark motorsport/HUD aesthetic compatible with the Jetpack Compose Material3 dark telemetry UI, and place exported Android drawables/assets under `app/src/main/res/` or store metadata directories cleanly.
